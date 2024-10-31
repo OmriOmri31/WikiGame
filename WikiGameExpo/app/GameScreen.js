@@ -8,12 +8,14 @@ import {
     StyleSheet,
     Platform,
     SafeAreaView,
+    Modal,
+    TouchableOpacity,
+    BackHandler,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useRouter } from 'expo-router';
 import usePreventBack from './usePreventBack';
-// Removed FileSystem and Asset imports
-import topPages from '../assets/top_articles.json'; // ייבוא ישיר
+import topPages from '../assets/top_articles.json'; // Direct import of JSON
 
 /**
  * GameScreen - Main game screen where the user navigates from a start article to a target article.
@@ -35,9 +37,11 @@ const GameScreen = () => {
     const [gameStartTime, setGameStartTime] = useState(null);
     const [elapsedTime, setElapsedTime] = useState(0); // State for elapsed time
     const [pageVisitCount, setPageVisitCount] = useState(1); // State for page visit count
+    const [isTargetModalVisible, setIsTargetModalVisible] = useState(false); // Modal visibility
     const router = useRouter();
 
     const webViewRef = useRef(null);
+    const intervalRef = useRef(null); // Ref to store the interval ID
     const previousUrlRef = useRef(''); // To track previous URL
     const isInitialLoadRef = useRef(true); // Flag to prevent initial load increment
 
@@ -79,11 +83,13 @@ const GameScreen = () => {
                 }
 
                 // Select a random target article from the top pages
-                let targetTitle = topPagesList[Math.floor(Math.random() * topPagesList.length)];
+                let targetTitle =
+                    topPagesList[Math.floor(Math.random() * topPagesList.length)];
 
                 // Ensure targetTitle is different from startTitle
                 while (targetTitle === startTitle) {
-                    targetTitle = topPagesList[Math.floor(Math.random() * topPagesList.length)];
+                    targetTitle =
+                        topPagesList[Math.floor(Math.random() * topPagesList.length)];
                 }
 
                 // Replace underscores with spaces for better readability
@@ -91,8 +97,12 @@ const GameScreen = () => {
                 const formattedTargetTitle = targetTitle.replace(/_/g, ' ').trim();
 
                 // Set URLs and formatted titles
-                const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(startTitle)}`;
-                const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`;
+                const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
+                    startTitle
+                )}`;
+                const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
+                    targetTitle
+                )}`;
 
                 setStartArticleUrl(startUrl);
                 setStartArticleTitle(formattedStartTitle);
@@ -110,29 +120,26 @@ const GameScreen = () => {
 
         initializeGame();
 
-        // Cleanup function
+        // Cleanup function for the first useEffect (no interval to clear here)
         return () => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-            }
+            // No cleanup needed here since interval is managed in a separate useEffect
         };
     }, []);
 
     useEffect(() => {
-        let timerInterval;
-
         if (gameStartTime) {
             // Start the timer interval
-            timerInterval = setInterval(() => {
+            intervalRef.current = setInterval(() => {
                 const currentTime = Date.now();
                 setElapsedTime(Math.floor((currentTime - gameStartTime) / 1000));
             }, 1000);
         }
 
+        // Cleanup function to clear the interval when the component unmounts or gameStartTime changes
         return () => {
-            // Clean up the timer interval
-            if (timerInterval) {
-                clearInterval(timerInterval);
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
             }
         };
     }, [gameStartTime]);
@@ -214,6 +221,24 @@ const GameScreen = () => {
         }
     };
 
+    // Handle Android hardware back button to close the modal if it's open
+    useEffect(() => {
+        const backAction = () => {
+            if (isTargetModalVisible) {
+                setIsTargetModalVisible(false);
+                return true; // Prevent default behavior
+            }
+            return false; // Allow default behavior
+        };
+
+        const backHandler = BackHandler.addEventListener(
+            'hardwareBackPress',
+            backAction
+        );
+
+        return () => backHandler.remove();
+    }, [isTargetModalVisible]);
+
     if (!startArticleUrl || !targetArticleUrl) {
         // Show a loading indicator while initializing the game
         return (
@@ -228,15 +253,32 @@ const GameScreen = () => {
         <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.pagesText}>
-                    {startArticleTitle} &#8592; {targetArticleTitle}
-                </Text>
-                <Text style={styles.counterText}>
-                    מספר הדפים: {pageVisitCount}
-                </Text>
-                <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
+                {/* First Line: Start Article Name */}
+                <View style={styles.titleRow}>
+                    <Text style={styles.pagesText}>{startArticleTitle}</Text>
+                </View>
+
+                {/* Second Line: Downward Arrow */}
+                <View style={styles.arrowRow}>
+                    <Text style={styles.arrowText}>↓</Text>
+                </View>
+
+                {/* Third Line: Target Article Name */}
+                <TouchableOpacity
+                    onPress={() => setIsTargetModalVisible(true)}
+                    activeOpacity={0.7} // Slight opacity change on press
+                >
+                    <Text style={styles.targetTitleText}>{targetArticleTitle}</Text>
+                </TouchableOpacity>
+
+                {/* Bottom Row: Timer and Counter */}
+                <View style={styles.infoRow}>
+                    <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
+                    <Text style={styles.counterText}>מספר הדפים: {pageVisitCount}</Text>
+                </View>
             </View>
 
+            {/* Main WebView */}
             {Platform.OS === 'web' ? (
                 // For web platform, use iframe
                 <iframe
@@ -250,9 +292,14 @@ const GameScreen = () => {
                         if (iframe) {
                             try {
                                 // Inject CSS to hide search bar and toolbar immediately
-                                iframe.contentWindow.eval(injectedJavaScriptBeforeContentLoaded);
+                                iframe.contentWindow.eval(
+                                    injectedJavaScriptBeforeContentLoaded
+                                );
                             } catch (error) {
-                                console.error('Error injecting scripts into iframe:', error);
+                                console.error(
+                                    'Error injecting scripts into iframe:',
+                                    error
+                                );
                             }
                         }
                     }}
@@ -263,7 +310,9 @@ const GameScreen = () => {
                     source={{ uri: startArticleUrl }}
                     ref={webViewRef}
                     onNavigationStateChange={handleNavigationChange}
-                    injectedJavaScriptBeforeContentLoaded={injectedJavaScriptBeforeContentLoaded}
+                    injectedJavaScriptBeforeContentLoaded={
+                        injectedJavaScriptBeforeContentLoaded
+                    }
                     javaScriptEnabled={true}
                     startInLoadingState
                     renderLoading={() => (
@@ -274,6 +323,41 @@ const GameScreen = () => {
                     style={styles.webview}
                 />
             )}
+
+            {/* Modal for Target Article */}
+            <Modal
+                visible={isTargetModalVisible}
+                animationType="slide"
+                onRequestClose={() => setIsTargetModalVisible(false)}
+            >
+                <SafeAreaView style={styles.modalContainer}>
+                    {/* Modal Header */}
+                    <View style={styles.modalHeader}>
+                        <TouchableOpacity onPress={() => setIsTargetModalVisible(false)}>
+                            <Text style={styles.closeButton}>סגור</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.modalTitle}>{targetArticleTitle}</Text>
+                        {/* Placeholder for alignment */}
+                        <View style={{ width: 50 }} />
+                    </View>
+
+                    {/* Modal WebView */}
+                    <WebView
+                        source={{ uri: targetArticleUrl }}
+                        style={styles.modalWebview}
+                        onShouldStartLoadWithRequest={(request) => {
+                            // Allow only the targetArticleUrl to load
+                            return request.url === targetArticleUrl;
+                        }}
+                        startInLoadingState
+                        renderLoading={() => (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color="#3366CC" />
+                            </View>
+                        )}
+                    />
+                </SafeAreaView>
+            </Modal>
         </SafeAreaView>
     );
 
@@ -291,37 +375,88 @@ const styles = StyleSheet.create({
     },
     header: {
         position: 'absolute',
-        top: 0,
+        top: 85, // Adjusted as per user change
         width: '100%',
         backgroundColor: '#ffffff',
-        alignItems: 'center',
-        paddingVertical: 35, // Adjusted as per your latest changes
+        paddingBottom: 10,
+        paddingHorizontal: 15,
         zIndex: 1, // Ensure the header is above the WebView
         borderBottomWidth: 1,
         borderBottomColor: '#dddddd',
+    },
+    titleRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     pagesText: {
         fontSize: 16,
         fontWeight: 'bold',
         color: '#000000',
     },
+    arrowRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 5,
+    },
+    arrowText: {
+        fontSize: 20, // Slightly larger for visibility
+        color: '#000000',
+    },
+    targetTitleText: {
+        color: '#000000', // Match the color of other header texts
+        fontWeight: '600', // Slightly bold to indicate interactivity
+        textDecorationLine: 'underline', // Underline to indicate clickability
+        fontSize: 16, // Same font size as pagesText
+        textAlign: 'center',
+        marginTop: 5, // Position slightly lower than the arrow
+    },
+    infoRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 10,
+    },
     counterText: {
         fontSize: 14,
         color: '#000000',
-        marginTop: 5,
     },
     timerText: {
         fontSize: 14,
         color: '#000000',
-        marginTop: 5,
     },
     webview: {
         flex: 1,
-        marginTop: 100, // Adjust margin to prevent content from being hidden behind the header
+        marginTop: 160, // Adjust margin to prevent content from being hidden behind the header
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    modalContainer: {
+        flex: 1,
+        backgroundColor: '#ffffff',
+    },
+    modalHeader: {
+        height: 60,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#dddddd',
+    },
+    closeButton: {
+        fontSize: 18,
+        color: '#3366CC',
+    },
+    modalTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#000000',
+    },
+    modalWebview: {
+        flex: 1,
     },
 });
