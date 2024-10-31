@@ -5,8 +5,8 @@ import { View, Text, Animated, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 
 /**
- * SplashScreen - Displays the splash screen with animated text.
- * Navigates to HomeScreen after animation.
+ * SplashScreen - Displays the app's splash screen with animated text.
+ * Navigates to HomeScreen after the animation.
  *
  * @component
  * @returns {JSX.Element} The SplashScreen component.

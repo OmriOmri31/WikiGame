@@ -6,6 +6,9 @@ import { Stack } from 'expo-router';
 /**
  * RootLayout - Defines the navigation stack for Expo Router with custom settings.
  *
+ * Configures global navigation options such as hiding headers and disabling gestures.
+ *
+ * @component
  * @returns {JSX.Element} The navigation stack.
  */
 const RootLayout = () => {
@@ -14,6 +17,7 @@ const RootLayout = () => {
             screenOptions={{
                 headerShown: false, // Hide headers on all screens
                 gestureEnabled: false, // Disable swipe back gesture
+                headerBackVisible: false, // Hide back button
             }}
         />
     );
