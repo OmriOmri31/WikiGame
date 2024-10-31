@@ -11,6 +11,7 @@ import {
     Modal,
     TouchableOpacity,
     BackHandler,
+    Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useRouter } from 'expo-router';
@@ -221,6 +222,37 @@ const GameScreen = () => {
         }
     };
 
+    /**
+     * Handles attempts to navigate outside the Wikipedia domain.
+     *
+     * @param {object} request - The navigation request object.
+     * @returns {boolean} - Whether to allow the navigation.
+     */
+    const handleShouldStartLoadWithRequest = (request) => {
+        const url = request.url.toLowerCase();
+
+        try {
+            const parsedUrl = new URL(url);
+            const hostname = parsedUrl.hostname;
+
+            // Define a regex to match 'he.wikipedia.org' and 'he.*.wikipedia.org'
+            const heWikipediaRegex = /^he(\.[a-z]+)?\.wikipedia\.org$/;
+
+            if (heWikipediaRegex.test(hostname)) {
+                // Allow navigation within 'he.wikipedia.org' and its subdomains
+                return true;
+            } else {
+                // Deny navigation and show an alert
+                Alert.alert("Can't leave the Wikipedia website");
+                return false;
+            }
+        } catch (error) {
+            console.error('Invalid URL:', url);
+            Alert.alert("Can't leave the Wikipedia website");
+            return false;
+        }
+    };
+
     // Handle Android hardware back button to close the modal if it's open
     useEffect(() => {
         const backAction = () => {
@@ -267,6 +299,8 @@ const GameScreen = () => {
                 <TouchableOpacity
                     onPress={() => setIsTargetModalVisible(true)}
                     activeOpacity={0.7} // Slight opacity change on press
+                    accessibilityLabel={`View target article: ${targetArticleTitle}`}
+                    accessibilityRole="button"
                 >
                     <Text style={styles.targetTitleText}>{targetArticleTitle}</Text>
                 </TouchableOpacity>
@@ -321,6 +355,8 @@ const GameScreen = () => {
                         </View>
                     )}
                     style={styles.webview}
+                    onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+                    originWhitelist={['https://*', 'http://*']} // Allow all origins initially
                 />
             )}
 
