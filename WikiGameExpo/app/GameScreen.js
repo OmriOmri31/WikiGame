@@ -67,10 +67,10 @@ const GameScreen = () => {
                 }
 
                 // Set URLs and titles
-                const startUrl = `https://he.wikipedia.org/wiki/${encodeURIComponent(
+                const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
                     startTitle
                 )}`;
-                const targetUrl = `https://he.wikipedia.org/wiki/${encodeURIComponent(
+                const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
                     targetTitle
                 )}`;
 
@@ -113,6 +113,37 @@ const GameScreen = () => {
             }
         };
     }, [gameStartTime]);
+
+    /**
+     * JavaScript code to remove the search bar and toolbar from the Wikipedia page.
+     */
+    const injectedJavaScript = `
+    (function() {
+      // Hide the search form
+      var searchForm = document.querySelector('.minerva-search-form');
+      if (searchForm) {
+        searchForm.style.display = 'none';
+      }
+
+      // Hide the toolbar
+      var toolbar = document.querySelector('.menu');
+      if (toolbar) {
+        toolbar.style.display = 'none';
+      }
+
+      // Prevent the search input from being focusable
+      var searchInput = document.getElementById('searchInput');
+      if (searchInput) {
+        searchInput.setAttribute('readonly', 'true');
+      }
+
+      // Disable all links that lead to the search page
+      var searchLinks = document.querySelectorAll('a[href*="/w/index.php?search="], a[href*="/wiki/מיוחד:חיפוש"]');
+      searchLinks.forEach(function(link) {
+        link.href = 'javascript:void(0);';
+      });
+    })();
+  `;
 
     /**
      * Handles navigation state changes in the WebView to detect when the target article is reached.
@@ -184,10 +215,12 @@ const GameScreen = () => {
                     src={startArticleUrl}
                     style={styles.webview}
                     title="Wikipedia Game"
-                    sandbox="allow-same-origin allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
                     onLoad={() => {
                         const iframe = webViewRef.current;
                         if (iframe) {
+                            // Inject JavaScript into the iframe
+                            iframe.contentWindow.eval(injectedJavaScript);
                             const checkUrl = () => {
                                 try {
                                     const currentUrl = iframe.contentWindow.location.href;
@@ -211,6 +244,8 @@ const GameScreen = () => {
                 <WebView
                     source={{ uri: startArticleUrl }}
                     onNavigationStateChange={handleNavigationChange}
+                    injectedJavaScript={injectedJavaScript}
+                    javaScriptEnabled={true}
                     startInLoadingState
                     renderLoading={() => (
                         <View style={styles.loadingContainer}>

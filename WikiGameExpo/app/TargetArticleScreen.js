@@ -35,6 +35,37 @@ const TargetArticleScreen = () => {
     const webViewRef = useRef(null);
 
     /**
+     * JavaScript code to remove the search bar and toolbar from the Wikipedia page.
+     */
+    const injectedJavaScript = `
+    (function() {
+      // Hide the search form
+      var searchForm = document.querySelector('.minerva-search-form');
+      if (searchForm) {
+        searchForm.style.display = 'none';
+      }
+
+      // Hide the toolbar
+      var toolbar = document.querySelector('.menu');
+      if (toolbar) {
+        toolbar.style.display = 'none';
+      }
+
+      // Prevent the search input from being focusable
+      var searchInput = document.getElementById('searchInput');
+      if (searchInput) {
+        searchInput.setAttribute('readonly', 'true');
+      }
+
+      // Disable all links that lead to the search page
+      var searchLinks = document.querySelectorAll('a[href*="/w/index.php?search="], a[href*="/wiki/מיוחד:חיפוש"]');
+      searchLinks.forEach(function(link) {
+        link.href = 'javascript:void(0);';
+      });
+    })();
+  `;
+
+    /**
      * Handles the press of the "Back to Winner Page" button.
      */
     const handleBackToWinnerPage = () => {
@@ -70,12 +101,21 @@ const TargetArticleScreen = () => {
                     src={articleUrl}
                     style={styles.webview}
                     title="Target Article"
-                    sandbox="allow-same-origin allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
+                    onLoad={() => {
+                        const iframe = webViewRef.current;
+                        if (iframe) {
+                            // Inject JavaScript into the iframe
+                            iframe.contentWindow.eval(injectedJavaScript);
+                        }
+                    }}
                 />
             ) : (
                 // For native platforms, use react-native-webview
                 <WebView
                     source={{ uri: articleUrl }}
+                    injectedJavaScript={injectedJavaScript}
+                    javaScriptEnabled={true}
                     startInLoadingState
                     renderLoading={() => (
                         <View style={styles.loadingContainer}>
@@ -100,7 +140,7 @@ const styles = StyleSheet.create({
     },
     header: {
         alignItems: 'center',
-        marginVertical: 30,
+        marginVertical: 30, // As per your updated styles
     },
     articleTitle: {
         fontSize: 18,
