@@ -26,10 +26,12 @@ const GameScreen = () => {
     usePreventBack(); // Prevent back navigation
 
     const [startArticleUrl, setStartArticleUrl] = useState(null);
+    const [startArticleTitle, setStartArticleTitle] = useState('');
     const [targetArticleTitle, setTargetArticleTitle] = useState('');
     const [targetArticleUrl, setTargetArticleUrl] = useState('');
     const [gameStartTime, setGameStartTime] = useState(null);
     const [elapsedTime, setElapsedTime] = useState(0); // State for elapsed time
+    const [pageVisitCount, setPageVisitCount] = useState(1); // State for page visit count
     const router = useRouter();
 
     const webViewRef = useRef(null);
@@ -75,6 +77,7 @@ const GameScreen = () => {
                 )}`;
 
                 setStartArticleUrl(startUrl);
+                setStartArticleTitle(startTitle);
                 setTargetArticleTitle(targetTitle);
                 setTargetArticleUrl(targetUrl);
 
@@ -117,31 +120,13 @@ const GameScreen = () => {
     /**
      * JavaScript code to remove the search bar and toolbar from the Wikipedia page.
      */
-    const injectedJavaScript = `
+    const injectedJavaScriptBeforeContentLoaded = `
     (function() {
-      // Hide the search form
-      var searchForm = document.querySelector('.minerva-search-form');
-      if (searchForm) {
-        searchForm.style.display = 'none';
-      }
-
-      // Hide the toolbar
-      var toolbar = document.querySelector('.menu');
-      if (toolbar) {
-        toolbar.style.display = 'none';
-      }
-
-      // Prevent the search input from being focusable
-      var searchInput = document.getElementById('searchInput');
-      if (searchInput) {
-        searchInput.setAttribute('readonly', 'true');
-      }
-
-      // Disable all links that lead to the search page
-      var searchLinks = document.querySelectorAll('a[href*="/w/index.php?search="], a[href*="/wiki/מיוחד:חיפוש"]');
-      searchLinks.forEach(function(link) {
-        link.href = 'javascript:void(0);';
-      });
+      var style = document.createElement('style');
+      style.innerHTML = \`
+        .minerva-search-form, .menu { display: none !important; }
+      \`;
+      document.head.appendChild(style);
     })();
   `;
 
@@ -152,6 +137,9 @@ const GameScreen = () => {
      */
     const handleNavigationChange = (navState) => {
         const { url } = navState;
+
+        // Increase page visit count if the URL has changed
+        setPageVisitCount((prevCount) => prevCount + 1);
 
         // Decode URLs for accurate comparison
         const currentUrlDecoded = decodeURIComponent(url);
@@ -187,7 +175,11 @@ const GameScreen = () => {
                     String(timeTaken)
                 )}&targetArticleTitle=${encodeURIComponent(
                     targetArticleTitle
-                )}&targetArticleUrl=${encodeURIComponent(targetArticleUrl)}`
+                )}&targetArticleUrl=${encodeURIComponent(
+                    targetArticleUrl
+                )}&pageVisitCount=${encodeURIComponent(
+                    String(pageVisitCount)
+                )}`
             );
         }
     };
@@ -204,10 +196,17 @@ const GameScreen = () => {
     // Render the game screen
     return (
         <SafeAreaView style={styles.container}>
+            {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.targetText}>מטרה: {targetArticleTitle}</Text>
+                <Text style={styles.pagesText}>
+                    {startArticleTitle} &#8592; {targetArticleTitle}
+                </Text>
+                <Text style={styles.counterText}>
+                    מספר הדפים: {pageVisitCount}
+                </Text>
                 <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
             </View>
+
             {Platform.OS === 'web' ? (
                 // For web platform, use iframe
                 <iframe
@@ -220,7 +219,7 @@ const GameScreen = () => {
                         const iframe = webViewRef.current;
                         if (iframe) {
                             // Inject JavaScript into the iframe
-                            iframe.contentWindow.eval(injectedJavaScript);
+                            iframe.contentWindow.eval(injectedJavaScriptBeforeContentLoaded);
                             const checkUrl = () => {
                                 try {
                                     const currentUrl = iframe.contentWindow.location.href;
@@ -243,8 +242,9 @@ const GameScreen = () => {
                 // For native platforms, use react-native-webview
                 <WebView
                     source={{ uri: startArticleUrl }}
+                    ref={webViewRef}
                     onNavigationStateChange={handleNavigationChange}
-                    injectedJavaScript={injectedJavaScript}
+                    injectedJavaScriptBeforeContentLoaded={injectedJavaScriptBeforeContentLoaded}
                     javaScriptEnabled={true}
                     startInLoadingState
                     renderLoading={() => (
@@ -269,23 +269,32 @@ const styles = StyleSheet.create({
         backgroundColor: '#ffffff', // Ensure background color
     },
     header: {
+        position: 'absolute',
+        top: 0,
+        width: '100%',
+        backgroundColor: '#ffffff',
         alignItems: 'center',
-        marginVertical: 30, // Updated marginVertical to 30
+        paddingVertical: 35,
+        zIndex: 1, // Ensure the header is above the WebView
     },
-    targetText: {
-        fontSize: 18,
+    pagesText: {
+        fontSize: 16,
         fontWeight: 'bold',
         color: '#000000',
     },
+    counterText: {
+        fontSize: 14,
+        color: '#000000',
+        marginTop: 5,
+    },
     timerText: {
-        fontSize: 16,
+        fontSize: 14,
         color: '#000000',
         marginTop: 5,
     },
     webview: {
         flex: 1,
-        width: '100%',
-        borderWidth: 0,
+        marginTop: 100, // Adjust margin to prevent content from being hidden behind the header
     },
     loadingContainer: {
         flex: 1,
