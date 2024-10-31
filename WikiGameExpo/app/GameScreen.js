@@ -12,11 +12,14 @@ import {
 import { WebView } from 'react-native-webview';
 import { useRouter } from 'expo-router';
 import usePreventBack from './usePreventBack';
+// Removed FileSystem and Asset imports
+import topPages from '../assets/top_articles.json'; // ייבוא ישיר
 
 /**
  * GameScreen - Main game screen where the user navigates from a start article to a target article.
  *
- * The user is presented with a random start article and must navigate to a random target article.
+ * The user is presented with a random start article and must navigate to a random target article
+ * from the top 5000 most visited pages.
  * The time taken to reach the target article is recorded and displayed upon completion.
  *
  * @component
@@ -35,7 +38,6 @@ const GameScreen = () => {
     const router = useRouter();
 
     const webViewRef = useRef(null);
-    const intervalRef = useRef(null);
     const previousUrlRef = useRef(''); // To track previous URL
     const isInitialLoadRef = useRef(true); // Flag to prevent initial load increment
 
@@ -47,40 +49,54 @@ const GameScreen = () => {
          * @returns {Promise<string>} The title of a random article.
          */
         const fetchRandomArticleTitle = async () => {
-            const response = await fetch(
-                'https://he.wikipedia.org/w/api.php?action=query&format=json&list=random&rnnamespace=0&rnlimit=1&origin=*'
-            );
-            const data = await response.json();
-            return data.query.random[0].title;
+            try {
+                const response = await fetch(
+                    'https://he.wikipedia.org/w/api.php?action=query&format=json&list=random&rnnamespace=0&rnlimit=1&origin=*'
+                );
+                const data = await response.json();
+                return data.query.random[0].title;
+            } catch (error) {
+                console.error('Error fetching random article title:', error);
+                return 'Main_Page'; // Fallback to Main_Page if fetching fails
+            }
         };
 
         /**
-         * Initializes the game by fetching different start and target articles.
+         * Initializes the game by fetching a random start article and a target article
+         * from the top 5000 most visited pages.
          */
         const initializeGame = async () => {
             try {
                 // Fetch random start article
                 const startTitle = await fetchRandomArticleTitle();
 
-                // Initialize targetTitle
-                let targetTitle = startTitle;
+                // Load top 5000 pages from imported JSON
+                const topPagesList = topPages;
 
-                // Keep fetching until targetTitle is different from startTitle
-                while (targetTitle === startTitle) {
-                    targetTitle = await fetchRandomArticleTitle();
+                if (topPagesList.length === 0) {
+                    console.error('Top pages list is empty. Cannot initialize target article.');
+                    return;
                 }
 
-                // Set URLs and titles
-                const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
-                    startTitle
-                )}`;
-                const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
-                    targetTitle
-                )}`;
+                // Select a random target article from the top pages
+                let targetTitle = topPagesList[Math.floor(Math.random() * topPagesList.length)];
+
+                // Ensure targetTitle is different from startTitle
+                while (targetTitle === startTitle) {
+                    targetTitle = topPagesList[Math.floor(Math.random() * topPagesList.length)];
+                }
+
+                // Replace underscores with spaces for better readability
+                const formattedStartTitle = startTitle.replace(/_/g, ' ').trim();
+                const formattedTargetTitle = targetTitle.replace(/_/g, ' ').trim();
+
+                // Set URLs and formatted titles
+                const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(startTitle)}`;
+                const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(targetTitle)}`;
 
                 setStartArticleUrl(startUrl);
-                setStartArticleTitle(startTitle);
-                setTargetArticleTitle(targetTitle);
+                setStartArticleTitle(formattedStartTitle);
+                setTargetArticleTitle(formattedTargetTitle);
                 setTargetArticleUrl(targetUrl);
 
                 // Start the game timer
@@ -235,18 +251,6 @@ const GameScreen = () => {
                             try {
                                 // Inject CSS to hide search bar and toolbar immediately
                                 iframe.contentWindow.eval(injectedJavaScriptBeforeContentLoaded);
-                            } catch (error) {
-                                console.error('Error injecting scripts into iframe:', error);
-                            }
-                        }
-                    }}
-                    onLoadEnd={() => {
-                        const iframe = webViewRef.current;
-                        if (iframe) {
-                            try {
-                                // Inject JavaScript to track link clicks if needed
-                                // Currently, counter is managed via onNavigationStateChange
-                                // So no additional JS is necessary here
                             } catch (error) {
                                 console.error('Error injecting scripts into iframe:', error);
                             }
