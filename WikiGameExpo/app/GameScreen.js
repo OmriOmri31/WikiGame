@@ -16,6 +16,9 @@ import usePreventBack from './usePreventBack';
 /**
  * GameScreen - Main game screen where the user navigates from a start article to a target article.
  *
+ * The user is presented with a random start article and must navigate to a random target article.
+ * The time taken to reach the target article is recorded and displayed upon completion.
+ *
  * @component
  * @returns {JSX.Element} The GameScreen component.
  */
@@ -26,7 +29,7 @@ const GameScreen = () => {
     const [targetArticleTitle, setTargetArticleTitle] = useState('');
     const [targetArticleUrl, setTargetArticleUrl] = useState('');
     const [gameStartTime, setGameStartTime] = useState(null);
-    const [elapsedTime, setElapsedTime] = useState(0); // New state for elapsed time
+    const [elapsedTime, setElapsedTime] = useState(0); // State for elapsed time
     const router = useRouter();
 
     const webViewRef = useRef(null);
@@ -131,7 +134,7 @@ const GameScreen = () => {
         const targetTitleMatch = targetUrlDecoded.match(/wiki\/([^#?]+)/);
         const targetTitleExtracted = targetTitleMatch ? targetTitleMatch[1] : '';
 
-        // Normalize titles
+        // Normalize titles by replacing underscores with spaces
         const normalizedCurrentTitle = currentTitle.replace(/_/g, ' ').trim();
         const normalizedTargetTitle = targetTitleExtracted.replace(/_/g, ' ').trim();
 
@@ -143,13 +146,18 @@ const GameScreen = () => {
         if (normalizedCurrentTitle === normalizedTargetTitle) {
             console.log('User reached the target article.');
 
-            // Use the elapsedTime state variable
             const timeTaken = elapsedTime;
 
             console.log(`Navigating to WinnerPage with timeTaken=${timeTaken}`);
 
-            // Navigate to WinnerPage with time taken as a query parameter
-            router.replace(`/WinnerPage?timeTaken=${encodeURIComponent(String(timeTaken))}`);
+            // Navigate to WinnerPage with time taken and target article info
+            router.replace(
+                `/WinnerPage?timeTaken=${encodeURIComponent(
+                    String(timeTaken)
+                )}&targetArticleTitle=${encodeURIComponent(
+                    targetArticleTitle
+                )}&targetArticleUrl=${encodeURIComponent(targetArticleUrl)}`
+            );
         }
     };
 
@@ -170,7 +178,7 @@ const GameScreen = () => {
                 <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
             </View>
             {Platform.OS === 'web' ? (
-                // Existing iframe code
+                // For web platform, use iframe
                 <iframe
                     ref={webViewRef}
                     src={startArticleUrl}
@@ -223,11 +231,11 @@ export default GameScreen;
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#ffffff', // Ensure background color
     },
     header: {
         alignItems: 'center',
-        marginVertical: 30,
+        marginVertical: 30, // Updated marginVertical to 30
     },
     targetText: {
         fontSize: 18,
@@ -242,7 +250,6 @@ const styles = StyleSheet.create({
     webview: {
         flex: 1,
         width: '100%',
-        height: '100%',
         borderWidth: 0,
     },
     loadingContainer: {
