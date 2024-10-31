@@ -36,6 +36,8 @@ const GameScreen = () => {
 
     const webViewRef = useRef(null);
     const intervalRef = useRef(null);
+    const previousUrlRef = useRef(''); // To track previous URL
+    const isInitialLoadRef = useRef(true); // Flag to prevent initial load increment
 
     useEffect(() => {
         /**
@@ -83,6 +85,8 @@ const GameScreen = () => {
 
                 // Start the game timer
                 setGameStartTime(Date.now());
+                previousUrlRef.current = startUrl; // Initialize previous URL
+                isInitialLoadRef.current = true; // Set initial load flag
             } catch (error) {
                 console.error('Error initializing game:', error);
             }
@@ -121,14 +125,14 @@ const GameScreen = () => {
      * JavaScript code to remove the search bar and toolbar from the Wikipedia page.
      */
     const injectedJavaScriptBeforeContentLoaded = `
-    (function() {
-      var style = document.createElement('style');
-      style.innerHTML = \`
-        .minerva-search-form, .menu { display: none !important; }
-      \`;
-      document.head.appendChild(style);
-    })();
-  `;
+        (function() {
+            var style = document.createElement('style');
+            style.innerHTML = \`
+                .minerva-search-form, .menu { display: none !important; }
+            \`;
+            document.head.appendChild(style);
+        })();
+    `;
 
     /**
      * Handles navigation state changes in the WebView to detect when the target article is reached.
@@ -138,49 +142,59 @@ const GameScreen = () => {
     const handleNavigationChange = (navState) => {
         const { url } = navState;
 
-        // Increase page visit count if the URL has changed
-        setPageVisitCount((prevCount) => prevCount + 1);
+        // Check if this is the initial load
+        if (isInitialLoadRef.current) {
+            isInitialLoadRef.current = false;
+            previousUrlRef.current = url;
+            return; // Do not increment counter on initial load
+        }
 
-        // Decode URLs for accurate comparison
-        const currentUrlDecoded = decodeURIComponent(url);
-        const targetUrlDecoded = decodeURIComponent(targetArticleUrl);
+        // Check if the URL has actually changed to a new page
+        if (url !== previousUrlRef.current) {
+            setPageVisitCount((prevCount) => prevCount + 1);
+            previousUrlRef.current = url; // Update previous URL
 
-        // Extract the article title from the current URL
-        const currentTitleMatch = currentUrlDecoded.match(/wiki\/([^#?]+)/);
-        const currentTitle = currentTitleMatch ? currentTitleMatch[1] : '';
+            // Decode URLs for accurate comparison
+            const currentUrlDecoded = decodeURIComponent(url);
+            const targetUrlDecoded = decodeURIComponent(targetArticleUrl);
 
-        // Extract the article title from the target URL
-        const targetTitleMatch = targetUrlDecoded.match(/wiki\/([^#?]+)/);
-        const targetTitleExtracted = targetTitleMatch ? targetTitleMatch[1] : '';
+            // Extract the article title from the current URL
+            const currentTitleMatch = currentUrlDecoded.match(/wiki\/([^#?]+)/);
+            const currentTitle = currentTitleMatch ? currentTitleMatch[1] : '';
 
-        // Normalize titles by replacing underscores with spaces
-        const normalizedCurrentTitle = currentTitle.replace(/_/g, ' ').trim();
-        const normalizedTargetTitle = targetTitleExtracted.replace(/_/g, ' ').trim();
+            // Extract the article title from the target URL
+            const targetTitleMatch = targetUrlDecoded.match(/wiki\/([^#?]+)/);
+            const targetTitleExtracted = targetTitleMatch ? targetTitleMatch[1] : '';
 
-        // Log the normalized current and target titles for debugging
-        console.log('Normalized Current Article:', normalizedCurrentTitle);
-        console.log('Normalized Target Article:', normalizedTargetTitle);
+            // Normalize titles by replacing underscores with spaces
+            const normalizedCurrentTitle = currentTitle.replace(/_/g, ' ').trim();
+            const normalizedTargetTitle = targetTitleExtracted.replace(/_/g, ' ').trim();
 
-        // Compare titles
-        if (normalizedCurrentTitle === normalizedTargetTitle) {
-            console.log('User reached the target article.');
+            // Log the normalized current and target titles for debugging
+            console.log('Normalized Current Article:', normalizedCurrentTitle);
+            console.log('Normalized Target Article:', normalizedTargetTitle);
 
-            const timeTaken = elapsedTime;
+            // Compare titles
+            if (normalizedCurrentTitle === normalizedTargetTitle) {
+                console.log('User reached the target article.');
 
-            console.log(`Navigating to WinnerPage with timeTaken=${timeTaken}`);
+                const timeTaken = elapsedTime;
 
-            // Navigate to WinnerPage with time taken and target article info
-            router.replace(
-                `/WinnerPage?timeTaken=${encodeURIComponent(
-                    String(timeTaken)
-                )}&targetArticleTitle=${encodeURIComponent(
-                    targetArticleTitle
-                )}&targetArticleUrl=${encodeURIComponent(
-                    targetArticleUrl
-                )}&pageVisitCount=${encodeURIComponent(
-                    String(pageVisitCount)
-                )}`
-            );
+                console.log(`Navigating to WinnerPage with timeTaken=${timeTaken}`);
+
+                // Navigate to WinnerPage with time taken and target article info
+                router.replace(
+                    `/WinnerPage?timeTaken=${encodeURIComponent(
+                        String(timeTaken)
+                    )}&targetArticleTitle=${encodeURIComponent(
+                        targetArticleTitle
+                    )}&targetArticleUrl=${encodeURIComponent(
+                        targetArticleUrl
+                    )}&pageVisitCount=${encodeURIComponent(
+                        String(pageVisitCount)
+                    )}`
+                );
+            }
         }
     };
 
@@ -218,23 +232,24 @@ const GameScreen = () => {
                     onLoad={() => {
                         const iframe = webViewRef.current;
                         if (iframe) {
-                            // Inject JavaScript into the iframe
-                            iframe.contentWindow.eval(injectedJavaScriptBeforeContentLoaded);
-                            const checkUrl = () => {
-                                try {
-                                    const currentUrl = iframe.contentWindow.location.href;
-                                    handleNavigationChange({ url: currentUrl });
-                                } catch (e) {
-                                    // Cross-origin error handling
-                                    console.error('Cannot access iframe content:', e);
-                                }
-                            };
-
-                            // Check URL on initial load
-                            checkUrl();
-
-                            // Set up an interval to check the URL periodically
-                            intervalRef.current = setInterval(checkUrl, 1000); // Check every second
+                            try {
+                                // Inject CSS to hide search bar and toolbar immediately
+                                iframe.contentWindow.eval(injectedJavaScriptBeforeContentLoaded);
+                            } catch (error) {
+                                console.error('Error injecting scripts into iframe:', error);
+                            }
+                        }
+                    }}
+                    onLoadEnd={() => {
+                        const iframe = webViewRef.current;
+                        if (iframe) {
+                            try {
+                                // Inject JavaScript to track link clicks if needed
+                                // Currently, counter is managed via onNavigationStateChange
+                                // So no additional JS is necessary here
+                            } catch (error) {
+                                console.error('Error injecting scripts into iframe:', error);
+                            }
                         }
                     }}
                 />
@@ -252,10 +267,12 @@ const GameScreen = () => {
                             <ActivityIndicator size="large" color="#3366CC" />
                         </View>
                     )}
+                    style={styles.webview}
                 />
             )}
         </SafeAreaView>
     );
+
 };
 
 export default GameScreen;
@@ -274,8 +291,10 @@ const styles = StyleSheet.create({
         width: '100%',
         backgroundColor: '#ffffff',
         alignItems: 'center',
-        paddingVertical: 35,
+        paddingVertical: 35, // Adjusted as per your latest changes
         zIndex: 1, // Ensure the header is above the WebView
+        borderBottomWidth: 1,
+        borderBottomColor: '#dddddd',
     },
     pagesText: {
         fontSize: 16,

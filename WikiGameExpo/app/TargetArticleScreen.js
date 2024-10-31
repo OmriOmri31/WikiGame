@@ -42,7 +42,8 @@ const TargetArticleScreen = () => {
     const [currentPageVisitCount, setCurrentPageVisitCount] = useState(initialPageVisitCount);
 
     const webViewRef = useRef(null);
-    const intervalRef = useRef(null);
+    const previousUrlRef = useRef(''); // To track previous URL
+    const isInitialLoadRef = useRef(true); // Flag to prevent initial load increment
 
     /**
      * JavaScript code to hide the search bar and toolbar immediately before content loads.
@@ -53,48 +54,11 @@ const TargetArticleScreen = () => {
             var style = document.createElement('style');
             style.innerHTML = \`
                 /* Hide the search form and toolbar */
-                .minerva-search-form, .menu, .minerva-user-navigation, .page-actions-menu { 
-                    display: none !important; 
-                }
-                /* Adjust the main content margin to occupy the space */
-                #content, .mw-body { 
-                    margin-top: 0 !important; 
-                }
+                .minerva-search-form, .menu { display: none !important; }
             \`;
             document.head.appendChild(style);
         })();
     `;
-
-    /**
-     * JavaScript code to track link clicks within the WebView.
-     * It increments the page visit counter each time a link is clicked.
-     */
-    const injectedJavaScript = `
-        (function() {
-            document.querySelectorAll('a').forEach(function(link) {
-                link.addEventListener('click', function() {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'pageVisited' }));
-                });
-            });
-        })();
-    `;
-
-    /**
-     * Handles messages sent from the WebView.
-     * Specifically, it listens for page visit events to increment the counter.
-     *
-     * @param {object} event - The event object containing the message.
-     */
-    const handleWebViewMessage = (event) => {
-        try {
-            const message = JSON.parse(event.nativeEvent.data);
-            if (message.type === 'pageVisited') {
-                setCurrentPageVisitCount((prevCount) => prevCount + 1);
-            }
-        } catch (error) {
-            console.error('Error parsing message from WebView:', error);
-        }
-    };
 
     /**
      * Handles navigation state changes in the WebView to detect when the target article is reached.
@@ -104,47 +68,60 @@ const TargetArticleScreen = () => {
     const handleNavigationChange = (navState) => {
         const { url } = navState;
 
-        // Decode URLs for accurate comparison
-        const currentUrlDecoded = decodeURIComponent(url);
-        const targetUrlDecoded = decodeURIComponent(articleUrl);
+        // Check if this is the initial load
+        if (isInitialLoadRef.current) {
+            isInitialLoadRef.current = false;
+            previousUrlRef.current = url;
+            return; // Do not increment counter on initial load
+        }
 
-        // Extract the article title from the current URL
-        const currentTitleMatch = currentUrlDecoded.match(/wiki\/([^#?]+)/);
-        const currentTitle = currentTitleMatch ? currentTitleMatch[1] : '';
+        // Check if the URL has actually changed to a new page
+        if (url !== previousUrlRef.current) {
+            setCurrentPageVisitCount((prevCount) => prevCount + 1);
+            previousUrlRef.current = url; // Update previous URL
 
-        // Extract the article title from the target URL
-        const targetTitleMatch = targetUrlDecoded.match(/wiki\/([^#?]+)/);
-        const targetTitleExtracted = targetTitleMatch ? targetTitleMatch[1] : '';
+            // Decode URLs for accurate comparison
+            const currentUrlDecoded = decodeURIComponent(url);
+            const targetUrlDecoded = decodeURIComponent(articleUrl);
 
-        // Normalize titles by replacing underscores with spaces
-        const normalizedCurrentTitle = currentTitle.replace(/_/g, ' ').trim();
-        const normalizedTargetTitle = targetTitleExtracted.replace(/_/g, ' ').trim();
+            // Extract the article title from the current URL
+            const currentTitleMatch = currentUrlDecoded.match(/wiki\/([^#?]+)/);
+            const currentTitle = currentTitleMatch ? currentTitleMatch[1] : '';
 
-        // Log the normalized current and target titles for debugging
-        console.log('Normalized Current Article:', normalizedCurrentTitle);
-        console.log('Normalized Target Article:', normalizedTargetTitle);
+            // Extract the article title from the target URL
+            const targetTitleMatch = targetUrlDecoded.match(/wiki\/([^#?]+)/);
+            const targetTitleExtracted = targetTitleMatch ? targetTitleMatch[1] : '';
 
-        // Compare titles
-        if (normalizedCurrentTitle === normalizedTargetTitle) {
-            console.log('User reached the target article.');
+            // Normalize titles by replacing underscores with spaces
+            const normalizedCurrentTitle = currentTitle.replace(/_/g, ' ').trim();
+            const normalizedTargetTitle = targetTitleExtracted.replace(/_/g, ' ').trim();
 
-            const finalTimeTaken = displayTime;
-            const finalPageVisitCount = currentPageVisitCount;
+            // Log the normalized current and target titles for debugging
+            console.log('Normalized Current Article:', normalizedCurrentTitle);
+            console.log('Normalized Target Article:', normalizedTargetTitle);
 
-            console.log(`Navigating to WinnerPage with timeTaken=${finalTimeTaken} and pageVisitCount=${finalPageVisitCount}`);
+            // Compare titles
+            if (normalizedCurrentTitle === normalizedTargetTitle) {
+                console.log('User reached the target article.');
 
-            // Navigate to WinnerPage with time taken, target article info, and page visit count
-            router.replace(
-                `/WinnerPage?timeTaken=${encodeURIComponent(
-                    String(finalTimeTaken)
-                )}&targetArticleTitle=${encodeURIComponent(
-                    articleTitle
-                )}&targetArticleUrl=${encodeURIComponent(
-                    articleUrl
-                )}&pageVisitCount=${encodeURIComponent(
-                    String(finalPageVisitCount)
-                )}`
-            );
+                const finalTimeTaken = displayTime;
+                const finalPageVisitCount = currentPageVisitCount;
+
+                console.log(`Navigating to WinnerPage with timeTaken=${finalTimeTaken} and pageVisitCount=${finalPageVisitCount}`);
+
+                // Navigate to WinnerPage with time taken, target article info, and page visit count
+                router.replace(
+                    `/WinnerPage?timeTaken=${encodeURIComponent(
+                        String(finalTimeTaken)
+                    )}&targetArticleTitle=${encodeURIComponent(
+                        articleTitle
+                    )}&targetArticleUrl=${encodeURIComponent(
+                        articleUrl
+                    )}&pageVisitCount=${encodeURIComponent(
+                        String(finalPageVisitCount)
+                    )}`
+                );
+            }
         }
     };
 
@@ -175,6 +152,7 @@ const TargetArticleScreen = () => {
         );
     }
 
+    // Render the target article screen
     return (
         <SafeAreaView style={styles.container}>
             {/* Custom Header */}
@@ -204,9 +182,6 @@ const TargetArticleScreen = () => {
                             try {
                                 // Inject CSS to hide search bar and toolbar immediately
                                 iframe.contentWindow.eval(injectedJavaScriptBeforeContentLoaded);
-
-                                // Inject JavaScript to track link clicks
-                                iframe.contentWindow.eval(injectedJavaScript);
                             } catch (error) {
                                 console.error('Error injecting scripts into iframe:', error);
                             }
@@ -220,16 +195,13 @@ const TargetArticleScreen = () => {
                     ref={webViewRef}
                     onNavigationStateChange={handleNavigationChange}
                     injectedJavaScriptBeforeContentLoaded={injectedJavaScriptBeforeContentLoaded}
-                    injectedJavaScript={injectedJavaScript}
                     javaScriptEnabled={true}
-                    onMessage={handleWebViewMessage}
                     startInLoadingState
                     renderLoading={() => (
                         <View style={styles.loadingContainer}>
                             <ActivityIndicator size="large" color="#3366CC" />
                         </View>
                     )}
-                    style={styles.webview}
                 />
             )}
         </SafeAreaView>
@@ -253,7 +225,7 @@ const styles = StyleSheet.create({
         width: '100%',
         backgroundColor: '#ffffff',
         alignItems: 'center',
-        paddingVertical: 35, // Adjusted as per GameScreen.js
+        paddingVertical: 35, // Consistent with GameScreen.js
         zIndex: 1, // Ensure the header is above the WebView
         borderBottomWidth: 1,
         borderBottomColor: '#dddddd',
