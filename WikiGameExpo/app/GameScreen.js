@@ -360,7 +360,7 @@ const GameScreen = () => {
                 />
             )}
 
-            {/* Modal for Target Article */}
+            {/* Modal for Helper Screen */}
             <Modal
                 visible={isTargetModalVisible}
                 animationType="slide"
@@ -475,11 +475,14 @@ const styles = StyleSheet.create({
         backgroundColor: '#ffffff',
     },
     modalHeader: {
-        height: 60,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        position: 'absolute',
+        top: 0, // Adjusted as per user change
+        width: '100%',
+        length: '35%',
+        backgroundColor: '#ffffff',
+        paddingBottom: 10,
         paddingHorizontal: 15,
+        zIndex: 1, // Ensure the header is above the WebView
         borderBottomWidth: 1,
         borderBottomColor: '#dddddd',
     },
