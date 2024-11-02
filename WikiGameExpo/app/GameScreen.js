@@ -350,11 +350,9 @@ const GameScreen = () => {
                 true;
             `);
             setIsSecretModalVisible(false);
-            Alert.alert('Success', 'You have been directed to the target article!');
         } else {
             // Close the modal and do nothing
             setIsSecretModalVisible(false);
-            Alert.alert('Incorrect Code', 'The code you entered is incorrect.');
         }
         setSecretInput(''); // Reset the input
     };

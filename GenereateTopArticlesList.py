@@ -39,16 +39,15 @@ def get_past_dates(num_days):
     excluding today.
     """
     dates = []
-    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    utc_now = datetime.datetime.utcnow()
     for i in range(num_days):
         date = utc_now - datetime.timedelta(days=i+1)
         dates.append(date)
     return dates
 
 def main():
-    top_pages = []
-    num_required = 5000
-    num_days = 14  # Number of days to look back
+    top_pages_set = set()
+    num_days = 90  # Number of days to look back (approximately last 3 months)
 
     dates = get_past_dates(num_days)
 
@@ -58,22 +57,22 @@ def main():
         articles = fetch_top_pages(date)
         if articles is None:
             continue
-        for article in articles:
+        # Get the top 10 articles for the day
+        top_10_articles = articles[:10]
+        for article in top_10_articles:
             title = article['article']
-            if title not in top_pages:
-                top_pages.append(title)
-            if len(top_pages) >= num_required:
-                break
-        if len(top_pages) >= num_required:
-            break
+            if title not in top_pages_set:
+                top_pages_set.add(title)
 
-    if len(top_pages) == 0:
+    if len(top_pages_set) == 0:
         print("No pages were fetched. Please check your date settings or API availability.")
     else:
+        # Convert the set to a list and sort it for consistency
+        top_pages_list = sorted(top_pages_set)
         # Save the top pages to a JSON file
         with open('WikiGameExpo/assets/top_articles.json', 'w', encoding='utf-8') as f:
-            json.dump(top_pages[:5000], f, ensure_ascii=False, indent=4)
-        print(f'Successfully saved {len(top_pages[:5000])} pages to top_articles.json')
+            json.dump(top_pages_list, f, ensure_ascii=False, indent=4)
+        print(f'Successfully saved {len(top_pages_list)} articles to top_articles.json')
 
 if __name__ == '__main__':
     main()
