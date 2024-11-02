@@ -12,6 +12,8 @@ import {
     TouchableOpacity,
     BackHandler,
     Alert,
+    TextInput,
+    TouchableWithoutFeedback,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useRouter } from 'expo-router';
@@ -39,6 +41,11 @@ const GameScreen = () => {
     const [elapsedTime, setElapsedTime] = useState(0); // State for elapsed time
     const [pageVisitCount, setPageVisitCount] = useState(1); // State for page visit count
     const [isTargetModalVisible, setIsTargetModalVisible] = useState(false); // Modal visibility
+    const [isSecretModalVisible, setIsSecretModalVisible] = useState(false); // Secret modal visibility
+    const [secretInput, setSecretInput] = useState(''); // State for secret input
+    const [tapCount, setTapCount] = useState(0); // Count of taps
+    const [lastTapTime, setLastTapTime] = useState(null); // Time of the last tap
+
     const router = useRouter();
 
     const webViewRef = useRef(null);
@@ -132,7 +139,7 @@ const GameScreen = () => {
             // Start the timer interval
             intervalRef.current = setInterval(() => {
                 const currentTime = Date.now();
-                setElapsedTime(Math.floor((currentTime - gameStartTime) / 1000));
+                setElapsedTime(((currentTime - gameStartTime) / 1000).toFixed(2));
             }, 1000);
         }
 
@@ -202,7 +209,7 @@ const GameScreen = () => {
             if (normalizedCurrentTitle === normalizedTargetTitle) {
                 console.log('User reached the target article.');
 
-                const timeTaken = elapsedTime;
+                const timeTaken = parseFloat(elapsedTime);
 
                 console.log(`Navigating to WinnerPage with timeTaken=${timeTaken}`);
 
@@ -260,6 +267,10 @@ const GameScreen = () => {
                 setIsTargetModalVisible(false);
                 return true; // Prevent default behavior
             }
+            if (isSecretModalVisible) {
+                setIsSecretModalVisible(false);
+                return true; // Prevent default behavior
+            }
             return false; // Allow default behavior
         };
 
@@ -269,7 +280,52 @@ const GameScreen = () => {
         );
 
         return () => backHandler.remove();
-    }, [isTargetModalVisible]);
+    }, [isTargetModalVisible, isSecretModalVisible]);
+
+    /**
+     * Handles taps on the unclickable header area to detect secret feature activation.
+     */
+    const handleHeaderTap = () => {
+        const now = Date.now();
+
+        if (lastTapTime && now - lastTapTime < 2000) {
+            // Within 2 seconds
+            setTapCount((prevCount) => prevCount + 1);
+        } else {
+            // Reset if more than 2 seconds have passed
+            setTapCount(1);
+        }
+
+        setLastTapTime(now);
+
+        if (tapCount + 1 >= 5) {
+            // Open the secret modal
+            setIsSecretModalVisible(true);
+            // Reset tap count
+            setTapCount(0);
+            setLastTapTime(null);
+        }
+    };
+
+    /**
+     * Handles the secret input submission.
+     */
+    const handleSecretSubmit = () => {
+        if (secretInput === 'Coys31') {
+            // Navigate directly to the target article
+            webViewRef.current?.injectJavaScript(`
+                window.location.href = '${targetArticleUrl}';
+                true;
+            `);
+            setIsSecretModalVisible(false);
+            Alert.alert('Success', 'You have been directed to the target article!');
+        } else {
+            // Close the modal and do nothing
+            setIsSecretModalVisible(false);
+            Alert.alert('Incorrect Code', 'The code you entered is incorrect.');
+        }
+        setSecretInput(''); // Reset the input
+    };
 
     if (!startArticleUrl || !targetArticleUrl) {
         // Show a loading indicator while initializing the game
@@ -284,33 +340,35 @@ const GameScreen = () => {
     return (
         <SafeAreaView style={styles.container}>
             {/* Header */}
-            <View style={styles.header}>
-                {/* First Line: Start Article Name */}
-                <View style={styles.titleRow}>
-                    <Text style={styles.pagesText}>{startArticleTitle}</Text>
-                </View>
+            <TouchableWithoutFeedback onPress={handleHeaderTap}>
+                <View style={styles.header}>
+                    {/* First Line: Start Article Name */}
+                    <View style={styles.titleRow}>
+                        <Text style={styles.pagesText}>{startArticleTitle}</Text>
+                    </View>
 
-                {/* Second Line: Downward Arrow */}
-                <View style={styles.arrowRow}>
-                    <Text style={styles.arrowText}>↓</Text>
-                </View>
+                    {/* Second Line: Downward Arrow */}
+                    <View style={styles.arrowRow}>
+                        <Text style={styles.arrowText}>↓</Text>
+                    </View>
 
-                {/* Third Line: Target Article Name */}
-                <TouchableOpacity
-                    onPress={() => setIsTargetModalVisible(true)}
-                    activeOpacity={0.7} // Slight opacity change on press
-                    accessibilityLabel={`View target article: ${targetArticleTitle}`}
-                    accessibilityRole="button"
-                >
-                    <Text style={styles.targetTitleText}>{targetArticleTitle}</Text>
-                </TouchableOpacity>
+                    {/* Third Line: Target Article Name */}
+                    <TouchableOpacity
+                        onPress={() => setIsTargetModalVisible(true)}
+                        activeOpacity={0.7} // Slight opacity change on press
+                        accessibilityLabel={`View target article: ${targetArticleTitle}`}
+                        accessibilityRole="button"
+                    >
+                        <Text style={styles.targetTitleText}>{targetArticleTitle}</Text>
+                    </TouchableOpacity>
 
-                {/* Bottom Row: Timer and Counter */}
-                <View style={styles.infoRow}>
-                    <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
-                    <Text style={styles.counterText}>מספר הדפים: {pageVisitCount}</Text>
+                    {/* Bottom Row: Timer and Counter */}
+                    <View style={styles.infoRow}>
+                        <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
+                        <Text style={styles.counterText}>מספר הדפים: {pageVisitCount}</Text>
+                    </View>
                 </View>
-            </View>
+            </TouchableWithoutFeedback>
 
             {/* Main WebView */}
             {Platform.OS === 'web' ? (
@@ -385,6 +443,9 @@ const GameScreen = () => {
                             // Allow only the targetArticleUrl to load
                             return request.url === targetArticleUrl;
                         }}
+                        injectedJavaScriptBeforeContentLoaded={
+                            injectedJavaScriptBeforeContentLoaded
+                        }
                         startInLoadingState
                         renderLoading={() => (
                             <View style={styles.loadingContainer}>
@@ -394,9 +455,35 @@ const GameScreen = () => {
                     />
                 </SafeAreaView>
             </Modal>
+
+            {/* Modal for Secret Feature */}
+            <Modal
+                visible={isSecretModalVisible}
+                animationType="fade"
+                transparent={true}
+                onRequestClose={() => setIsSecretModalVisible(false)}
+            >
+                <View style={styles.secretModalContainer}>
+                    <View style={styles.secretModalContent}>
+                        <Text style={styles.secretModalText}>Enter Secret Code:</Text>
+                        <TextInput
+                            style={styles.secretInput}
+                            value={secretInput}
+                            onChangeText={setSecretInput}
+                            placeholder="Secret Code"
+                            secureTextEntry
+                        />
+                        <TouchableOpacity
+                            style={styles.secretButton}
+                            onPress={handleSecretSubmit}
+                        >
+                            <Text style={styles.secretButtonText}>Submit</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
-
 };
 
 export default GameScreen;
@@ -411,7 +498,7 @@ const styles = StyleSheet.create({
     },
     header: {
         position: 'absolute',
-        top: 85, // Adjusted as per user change
+        top: 85, // Adjusted as per your changes
         width: '100%',
         backgroundColor: '#ffffff',
         paddingBottom: 10,
@@ -476,15 +563,17 @@ const styles = StyleSheet.create({
     },
     modalHeader: {
         position: 'absolute',
-        top: 0, // Adjusted as per user change
+        top: 0,
         width: '100%',
-        length: '35%',
         backgroundColor: '#ffffff',
-        paddingBottom: 10,
+        paddingVertical: 15,
         paddingHorizontal: 15,
-        zIndex: 1, // Ensure the header is above the WebView
+        zIndex: 1,
         borderBottomWidth: 1,
         borderBottomColor: '#dddddd',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
     closeButton: {
         fontSize: 18,
@@ -494,8 +583,49 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
         color: '#000000',
+        textAlign: 'center',
+        flex: 1,
     },
     modalWebview: {
         flex: 1,
+        marginTop: 60, // Height of the modal header to prevent overlap
+    },
+    // Styles for Secret Modal
+    secretModalContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    secretModalContent: {
+        width: '80%',
+        backgroundColor: '#ffffff',
+        padding: 20,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    secretModalText: {
+        fontSize: 18,
+        marginBottom: 15,
+        color: '#000000',
+    },
+    secretInput: {
+        height: 40,
+        borderColor: '#cccccc',
+        borderWidth: 1,
+        width: '100%',
+        paddingHorizontal: 10,
+        marginBottom: 15,
+        textAlign: 'center',
+    },
+    secretButton: {
+        backgroundColor: '#3366CC',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 5,
+    },
+    secretButtonText: {
+        color: '#ffffff',
+        fontSize: 16,
     },
 });
