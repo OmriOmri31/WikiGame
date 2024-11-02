@@ -16,9 +16,13 @@ import {
     TouchableWithoutFeedback,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import usePreventBack from './usePreventBack';
 import topPages from '../assets/top_articles.json'; // Direct import of JSON
+
+// Import Firebase Firestore functions
+import { db } from '../firebaseConfig';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
 
 /**
  * GameScreen - Main game screen where the user navigates from a start article to a target article.
@@ -33,6 +37,10 @@ import topPages from '../assets/top_articles.json'; // Direct import of JSON
 const GameScreen = () => {
     usePreventBack(); // Prevent back navigation
 
+    const router = useRouter();
+    const params = useLocalSearchParams();
+    const { playerName } = params; // Get the player's name from params
+
     const [startArticleUrl, setStartArticleUrl] = useState(null);
     const [startArticleTitle, setStartArticleTitle] = useState('');
     const [targetArticleTitle, setTargetArticleTitle] = useState('');
@@ -45,8 +53,7 @@ const GameScreen = () => {
     const [secretInput, setSecretInput] = useState(''); // State for secret input
     const [tapCount, setTapCount] = useState(0); // Count of taps
     const [lastTapTime, setLastTapTime] = useState(null); // Time of the last tap
-
-    const router = useRouter();
+    const [showCongratsModal, setShowCongratsModal] = useState(false); // Show congrats modal
 
     const webViewRef = useRef(null);
     const intervalRef = useRef(null); // Ref to store the interval ID
@@ -211,20 +218,45 @@ const GameScreen = () => {
 
                 const timeTaken = parseFloat(elapsedTime);
 
-                console.log(`Navigating to WinnerPage with timeTaken=${timeTaken}`);
+                console.log(`User completed the game in ${timeTaken} seconds`);
 
-                // Navigate to WinnerPage with time taken and target article info
-                router.replace(
-                    `/WinnerPage?timeTaken=${encodeURIComponent(
-                        String(timeTaken)
-                    )}&targetArticleTitle=${encodeURIComponent(
-                        targetArticleTitle
-                    )}&targetArticleUrl=${encodeURIComponent(
-                        targetArticleUrl
-                    )}&pageVisitCount=${encodeURIComponent(
-                        String(pageVisitCount)
-                    )}`
-                );
+                // Stop the timer
+                if (intervalRef.current) {
+                    clearInterval(intervalRef.current);
+                    intervalRef.current = null;
+                }
+
+                // Show the "כל הכבוד" message for 2 seconds
+                setShowCongratsModal(true);
+
+                // Store the player's score and then navigate to Leaderboard
+                const storeScoreAndNavigate = async () => {
+                    try {
+                        await addDoc(collection(db, 'scores'), {
+                            name: playerName,
+                            pagesVisited: pageVisitCount,
+                            timeTaken: timeTaken,
+                            timestamp: Timestamp.now(),
+                        });
+                        console.log('Score saved successfully.');
+
+                        // After 2 seconds, navigate to Leaderboard
+                        setTimeout(() => {
+                            // Navigate to Leaderboard with player's name
+                            router.replace({
+                                pathname: '/Leaderboard',
+                                params: {
+                                    playerName: playerName,
+                                },
+                            });
+                        }, 2000);
+                    } catch (error) {
+                        console.error('Error adding document: ', error);
+                        Alert.alert('שגיאה', 'התרחשה שגיאה בשמירת הציון.');
+                    }
+                };
+
+                storeScoreAndNavigate();
             }
         }
     };
@@ -482,12 +514,31 @@ const GameScreen = () => {
                     </View>
                 </View>
             </Modal>
+
+            {/* Modal for Congrats Message */}
+            <Modal
+                visible={showCongratsModal}
+                animationType="fade"
+                transparent={true}
+                onRequestClose={() => {}}
+            >
+                <View style={styles.congratsModalContainer}>
+                    <View style={styles.congratsModalContent}>
+                        <Text style={styles.congratsText}>כל הכבוד!</Text>
+                        <Text style={styles.timeText}>
+                            סיימת את המשחק ב-{elapsedTime} שניות.
+                        </Text>
+                        <Text style={styles.visitsText}>
+                            מספר הדפים שביקרת: {pageVisitCount}
+                        </Text>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
 
 export default GameScreen;
-
 /**
  * Styles for GameScreen
  */
@@ -627,5 +678,37 @@ const styles = StyleSheet.create({
     secretButtonText: {
         color: '#ffffff',
         fontSize: 16,
+    },
+    // Styles for Congrats Modal
+    congratsModalContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    congratsModalContent: {
+        width: '80%',
+        backgroundColor: '#ffffff',
+        padding: 20,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    congratsText: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: '#000000',
+        marginBottom: 20,
+        textAlign: 'center',
+    },
+    timeText: {
+        fontSize: 24,
+        color: '#000000',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    visitsText: {
+        fontSize: 24,
+        color: '#000000',
+        textAlign: 'center',
     },
 });
