@@ -18,17 +18,21 @@ import {
 import { WebView } from 'react-native-webview';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import usePreventBack from './usePreventBack';
-import topPages from '../assets/top_articles.json'; // Direct import of JSON
 
 // Import Firebase Firestore functions
 import { db } from '../firebaseConfig';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import {
+    collection,
+    addDoc,
+    Timestamp,
+    doc,
+    getDoc,
+} from 'firebase/firestore';
 
 /**
  * GameScreen - Main game screen where the user navigates from a start article to a target article.
  *
- * The user is presented with a random start article and must navigate to a random target article
- * from the top 5000 most visited pages.
+ * The user is presented with a daily start article and must navigate to the daily target article.
  * The time taken to reach the target article is recorded and displayed upon completion.
  *
  * @component
@@ -62,80 +66,47 @@ const GameScreen = () => {
 
     useEffect(() => {
         /**
-         * Fetches a random article title from Hebrew Wikipedia.
-         *
-         * @async
-         * @returns {Promise<string>} The title of a random article.
+         * Fetches the daily start and target articles from Firestore.
          */
-        const fetchRandomArticleTitle = async () => {
+        const fetchDailyArticles = async () => {
             try {
-                const response = await fetch(
-                    'https://he.wikipedia.org/w/api.php?action=query&format=json&list=random&rnnamespace=0&rnlimit=1&origin=*'
-                );
-                const data = await response.json();
-                return data.query.random[0].title;
+                const docRef = doc(db, 'daily', 'articles');
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const startTitle = data.startArticleTitle;
+                    const targetTitle = data.targetArticleTitle;
+
+                    // Set URLs and formatted titles
+                    const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
+                        startTitle
+                    )}`;
+                    const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
+                        targetTitle
+                    )}`;
+
+                    setStartArticleUrl(startUrl);
+                    setStartArticleTitle(startTitle);
+                    setTargetArticleTitle(targetTitle);
+                    setTargetArticleUrl(targetUrl);
+
+                    // Start the game timer
+                    setGameStartTime(Date.now());
+                    previousUrlRef.current = startUrl; // Initialize previous URL
+                    isInitialLoadRef.current = true; // Set initial load flag
+                } else {
+                    Alert.alert('שגיאה', 'לא ניתן לטעון את המאמרים היומיים.');
+                    console.error('No daily articles found in Firestore.');
+                }
             } catch (error) {
-                console.error('Error fetching random article title:', error);
-                return 'Main_Page'; // Fallback to Main_Page if fetching fails
+                console.error('Error fetching daily articles:', error);
+                Alert.alert('שגיאה', 'אירעה שגיאה בטעינת המאמרים.');
             }
         };
 
-        /**
-         * Initializes the game by fetching a random start article and a target article
-         * from the top 5000 most visited pages.
-         */
-        const initializeGame = async () => {
-            try {
-                // Fetch random start article
-                const startTitle = await fetchRandomArticleTitle();
+        fetchDailyArticles();
 
-                // Load top 5000 pages from imported JSON
-                const topPagesList = topPages;
-
-                if (topPagesList.length === 0) {
-                    console.error('Top pages list is empty. Cannot initialize target article.');
-                    return;
-                }
-
-                // Select a random target article from the top pages
-                let targetTitle =
-                    topPagesList[Math.floor(Math.random() * topPagesList.length)];
-
-                // Ensure targetTitle is different from startTitle
-                while (targetTitle === startTitle) {
-                    targetTitle =
-                        topPagesList[Math.floor(Math.random() * topPagesList.length)];
-                }
-
-                // Replace underscores with spaces for better readability
-                const formattedStartTitle = startTitle.replace(/_/g, ' ').trim();
-                const formattedTargetTitle = targetTitle.replace(/_/g, ' ').trim();
-
-                // Set URLs and formatted titles
-                const startUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
-                    startTitle
-                )}`;
-                const targetUrl = `https://he.m.wikipedia.org/wiki/${encodeURIComponent(
-                    targetTitle
-                )}`;
-
-                setStartArticleUrl(startUrl);
-                setStartArticleTitle(formattedStartTitle);
-                setTargetArticleTitle(formattedTargetTitle);
-                setTargetArticleUrl(targetUrl);
-
-                // Start the game timer
-                setGameStartTime(Date.now());
-                previousUrlRef.current = startUrl; // Initialize previous URL
-                isInitialLoadRef.current = true; // Set initial load flag
-            } catch (error) {
-                console.error('Error initializing game:', error);
-            }
-        };
-
-        initializeGame();
-
-        // Cleanup function for the first useEffect (no interval to clear here)
         return () => {
             // No cleanup needed here since interval is managed in a separate useEffect
         };
@@ -169,6 +140,38 @@ const GameScreen = () => {
                 .minerva-search-form, .menu { display: none !important; }
             \`;
             document.head.appendChild(style);
+        })();
+    `;
+
+    /**
+     * JavaScript code to disable all clickable elements in the modal WebView.
+     * Ensures that links appear clickable but do nothing when clicked.
+     */
+    const modalInjectedJavaScript = `
+        (function() {
+            // Disable all click events
+            document.addEventListener('click', function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }, true); // Capture phase
+
+            // Override window.location to prevent navigation
+            Object.defineProperty(window, 'location', {
+                set: function() {},
+                get: function() {
+                    return window.location;
+                }
+            });
+
+            // Override window.open to prevent new windows
+            window.open = function() {};
+
+            // Override history methods to prevent navigation
+            history.pushState = function() {};
+            history.replaceState = function() {};
+
+            // Prevent any changes to window.location via hash
+            window.onhashchange = function() {};
         })();
     `;
 
@@ -290,6 +293,29 @@ const GameScreen = () => {
             Alert.alert("Can't leave the Wikipedia website");
             return false;
         }
+    };
+
+    /**
+     * Handles navigation attempts within the modal WebView to prevent navigation away from the target article.
+     *
+     * @param {object} request - The navigation request object.
+     * @returns {boolean} - Whether to allow the navigation.
+     */
+    const handleModalShouldStartLoadWithRequest = (request) => {
+        const url = request.url.toLowerCase();
+
+        // Allow the initial target article URL and resource loading
+        if (url === targetArticleUrl.toLowerCase()) {
+            return true;
+        }
+
+        // Allow loading of resources (e.g., images, scripts, stylesheets)
+        if (!request.isTopFrame) {
+            return true;
+        }
+
+        // Block any other navigation attempts
+        return false;
     };
 
     // Handle Android hardware back button to close the modal if it's open
@@ -448,7 +474,7 @@ const GameScreen = () => {
                 />
             )}
 
-            {/* Modal for Helper Screen */}
+            {/* Modal for Target Article */}
             <Modal
                 visible={isTargetModalVisible}
                 animationType="slide"
@@ -457,31 +483,32 @@ const GameScreen = () => {
                 <SafeAreaView style={styles.modalContainer}>
                     {/* Modal Header */}
                     <View style={styles.modalHeader}>
-                        <TouchableOpacity onPress={() => setIsTargetModalVisible(false)}>
-                            <Text style={styles.closeButton}>סגור</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.modalTitle}>{targetArticleTitle}</Text>
-                        {/* Placeholder for alignment */}
-                        <View style={{ width: 50 }} />
+                        <View style={styles.closeButtonContainer}>
+                            <TouchableOpacity onPress={() => setIsTargetModalVisible(false)}>
+                                <Text style={styles.closeButton}>חזור למהלך המשחק</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.modalInfoRow}>
+                            <Text style={styles.timerText}>זמן: {elapsedTime} שניות</Text>
+                            <Text style={styles.counterText}>מספר הדפים: {pageVisitCount}</Text>
+                        </View>
                     </View>
 
                     {/* Modal WebView */}
                     <WebView
                         source={{ uri: targetArticleUrl }}
                         style={styles.modalWebview}
-                        onShouldStartLoadWithRequest={(request) => {
-                            // Allow only the targetArticleUrl to load
-                            return request.url === targetArticleUrl;
-                        }}
                         injectedJavaScriptBeforeContentLoaded={
                             injectedJavaScriptBeforeContentLoaded
                         }
+                        injectedJavaScript={modalInjectedJavaScript}
                         startInLoadingState
                         renderLoading={() => (
                             <View style={styles.loadingContainer}>
                                 <ActivityIndicator size="large" color="#3366CC" />
                             </View>
                         )}
+                        onShouldStartLoadWithRequest={handleModalShouldStartLoadWithRequest}
                     />
                 </SafeAreaView>
             </Modal>
@@ -495,19 +522,19 @@ const GameScreen = () => {
             >
                 <View style={styles.secretModalContainer}>
                     <View style={styles.secretModalContent}>
-                        <Text style={styles.secretModalText}>Enter Secret Code:</Text>
+                        <Text style={styles.secretModalText}>הזן קוד סודי:</Text>
                         <TextInput
                             style={styles.secretInput}
                             value={secretInput}
                             onChangeText={setSecretInput}
-                            placeholder="Secret Code"
+                            placeholder="קוד סודי"
                             secureTextEntry
                         />
                         <TouchableOpacity
                             style={styles.secretButton}
                             onPress={handleSecretSubmit}
                         >
-                            <Text style={styles.secretButtonText}>Submit</Text>
+                            <Text style={styles.secretButtonText}>שלח</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -537,6 +564,7 @@ const GameScreen = () => {
 };
 
 export default GameScreen;
+
 /**
  * Styles for GameScreen
  */
@@ -615,29 +643,31 @@ const styles = StyleSheet.create({
         top: 0,
         width: '100%',
         backgroundColor: '#ffffff',
-        paddingVertical: 15,
-        paddingHorizontal: 15,
+        paddingVertical: 50,
         zIndex: 1,
         borderBottomWidth: 1,
         borderBottomColor: '#dddddd',
-        flexDirection: 'row',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'space-between',
+    },
+    closeButtonContainer: {
+        width: '100%',
+        alignItems: 'center',
     },
     closeButton: {
         fontSize: 18,
         color: '#3366CC',
     },
-    modalTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#000000',
-        textAlign: 'center',
-        flex: 1,
+    modalInfoRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+        paddingHorizontal: 15,
+        marginTop: 10,
     },
     modalWebview: {
         flex: 1,
-        marginTop: 60, // Height of the modal header to prevent overlap
+        marginTop: 100, // Adjusted to accommodate the modal header height
     },
     // Styles for Secret Modal
     secretModalContainer: {
