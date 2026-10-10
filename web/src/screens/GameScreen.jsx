@@ -3,6 +3,7 @@ import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
 import { db } from '../firebase';
 import { exitFullscreen } from '../fullscreen';
+import Sheet from '../Sheet';
 import { formatDuration } from '../time';
 import {
   fetchArticle,
@@ -282,27 +283,31 @@ export default function GameScreen({ user, onFinish }) {
     );
   }
 
+  const stats = (
+    <div className="info-row">
+      <span className="stat">זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime)}</bdi></span>
+      <span className="stat">מספר הדפים: <bdi>{pages}</bdi></span>
+    </div>
+  );
+
   return (
     <main className="game">
-      <header className="game-header" onClick={registerHeaderTap}>
-        <p className="route-title">{startTitle}</p>
-        <p className="arrow" aria-hidden="true">↓</p>
-        <button
-          className="target-link"
-          type="button"
-          onClick={() => setGoalOpen(true)}
-        >
-          {goalTitle}
-        </button>
-        <div className="info-row">
-          <span>זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime)}</bdi></span>
-          <span>מספר הדפים: <bdi>{pages}</bdi></span>
-        </div>
-        {loading ? <div className="loading-bar" role="progressbar" aria-label="טוען ערך" /> : null}
-      </header>
+      <div className="article-scroll" ref={scrollRef}>
+        <header className="game-header" onClick={registerHeaderTap}>
+          <p className="route-title">{startTitle}</p>
+          <p className="arrow" aria-hidden="true">↓</p>
+          <button
+            className="target-link"
+            type="button"
+            onClick={() => setGoalOpen(true)}
+          >
+            {goalTitle}
+          </button>
+          {stats}
+          {loading ? <div className="loading-bar" role="progressbar" aria-label="טוען ערך" /> : null}
+        </header>
 
-      <div className={`article-scroll ${loading ? 'is-loading' : ''}`} ref={scrollRef}>
-        <article className="article-inner mw-parser-output">
+        <article className={`article-inner mw-parser-output${loading ? ' is-loading' : ''}`}>
           <h1>{article.title}</h1>
           <div
             className="article-body"
@@ -314,29 +319,30 @@ export default function GameScreen({ user, onFinish }) {
 
       {toast ? <div className="toast" role="status">{toast}</div> : null}
 
-      {goalOpen && goalArticle ? (
-        <section className="modal-sheet" role="dialog" aria-modal="true" aria-label={goalTitle}>
-          <header className="sheet-header">
-            <button className="linkish" type="button" onClick={() => setGoalOpen(false)}>
-              חזור למהלך המשחק
-            </button>
-            <div className="info-row">
-              <span>זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime)}</bdi></span>
-              <span>מספר הדפים: <bdi>{pages}</bdi></span>
-            </div>
-          </header>
-          <div className="article-scroll">
-            <article className="article-inner mw-parser-output">
-              <h1>{goalArticle.title}</h1>
-              <p className="lede">זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.</p>
-              <div
-                className="article-body"
-                onClick={(event) => followLink(event, true)}
-                dangerouslySetInnerHTML={{ __html: goalHtml }}
-              />
-            </article>
-          </div>
-        </section>
+      {goalArticle ? (
+        <Sheet
+          open={goalOpen}
+          onOpenChange={setGoalOpen}
+          label={goalTitle}
+          header={(
+            <>
+              <button className="linkish" type="button" onClick={() => setGoalOpen(false)}>
+                חזור למהלך המשחק
+              </button>
+              {stats}
+            </>
+          )}
+        >
+          <article className="article-inner mw-parser-output">
+            <h1>{goalArticle.title}</h1>
+            <p className="lede">זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.</p>
+            <div
+              className="article-body"
+              onClick={(event) => followLink(event, true)}
+              dangerouslySetInnerHTML={{ __html: goalHtml }}
+            />
+          </article>
+        </Sheet>
       ) : null}
 
       {secretOpen ? (

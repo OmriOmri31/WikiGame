@@ -246,12 +246,14 @@ export default function HomeScreen({ user, redirectError, onStart, onLeaderboard
           <>
             <p className="greeting">שלום, {greeting}</p>
             <button className="primary" type="button" onClick={startGame}>התחל</button>
-            <button className="text-button" type="button" onClick={onLeaderboard}>
-              טבלת השיאים
-            </button>
-            <button className="text-button" type="button" onClick={handleSignOut}>
-              התנתקות
-            </button>
+            <div className="action-list">
+              <button className="text-button" type="button" onClick={onLeaderboard}>
+                טבלת השיאים
+              </button>
+              <button className="text-button danger" type="button" onClick={handleSignOut}>
+                התנתקות
+              </button>
+            </div>
             {error ? <p className="form-error" role="alert">{error}</p> : null}
             <section className="my-scores" aria-label="התוצאות שלי">
               <h2>התוצאות שלי</h2>
@@ -341,29 +343,31 @@ export default function HomeScreen({ user, redirectError, onStart, onLeaderboard
               </button>
             ) : null}
 
-            {mode === 'sign-in' ? (
-              <>
-                <button className="text-button" type="button" onClick={() => switchMode('sign-up')}>
-                  יצירת חשבון
+            <div className="action-list">
+              {mode === 'sign-in' ? (
+                <>
+                  <button className="text-button" type="button" onClick={() => switchMode('sign-up')}>
+                    יצירת חשבון
+                  </button>
+                  <button className="text-button" type="button" onClick={() => switchMode('reset')}>
+                    שכחתי סיסמה
+                  </button>
+                </>
+              ) : null}
+              {mode === 'sign-up' ? (
+                <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
+                  כבר יש לי חשבון
                 </button>
-                <button className="text-button" type="button" onClick={() => switchMode('reset')}>
-                  שכחתי סיסמה
+              ) : null}
+              {mode === 'reset' ? (
+                <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
+                  חזרה להתחברות
                 </button>
-              </>
-            ) : null}
-            {mode === 'sign-up' ? (
-              <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
-                כבר יש לי חשבון
+              ) : null}
+              <button className="text-button" type="button" onClick={onLeaderboard}>
+                טבלת השיאים
               </button>
-            ) : null}
-            {mode === 'reset' ? (
-              <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
-                חזרה להתחברות
-              </button>
-            ) : null}
-            <button className="text-button" type="button" onClick={onLeaderboard}>
-              טבלת השיאים
-            </button>
+            </div>
           </>
         )}
       </div>

@@ -78,6 +78,7 @@ export default function Leaderboard({ user, highlightId, onHome }) {
 
   return (
     <main className="board">
+      <div className="board-scroll">
       <h1>טבלת השיאים</h1>
       <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
 
@@ -112,9 +113,7 @@ export default function Leaderboard({ user, highlightId, onHome }) {
 
       {playerRank > 10 && playerScore ? (
         <div className="outside-top">
-          <p className="dots">.</p>
-          <p className="dots">.</p>
-          <p className="dots">.</p>
+          <p className="dots" aria-hidden="true">···</p>
           <div className="score-row is-player">
             <span className="num">{playerRank}</span>
             <span className="name">{playerScore.name}</span>
@@ -124,9 +123,12 @@ export default function Leaderboard({ user, highlightId, onHome }) {
         </div>
       ) : null}
 
-      <button className="primary board-home" type="button" onClick={() => onHomeRef.current()}>
-        {user ? 'משחק חדש' : 'חזרה'}
-      </button>
+      </div>
+      <div className="board-bar">
+        <button className="primary" type="button" onClick={() => onHomeRef.current()}>
+          {user ? 'משחק חדש' : 'חזרה'}
+        </button>
+      </div>
     </main>
   );
 }
