@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { getAuth, getRedirectResult } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Public Firebase web config. The key is restricted by Firestore security rules.
@@ -14,4 +15,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const redirectResult = getRedirectResult(auth);

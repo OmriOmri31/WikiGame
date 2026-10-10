@@ -95,7 +95,7 @@ export function prepareArticleHtml(html) {
   const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
   const root = doc.body.firstElementChild;
 
-  root.querySelectorAll('script, style, link, iframe, object, form, input, button').forEach((node) => {
+  root.querySelectorAll('script, link, iframe, object, form, input, button').forEach((node) => {
     node.remove();
   });
   root.querySelectorAll('.mw-editsection, .mw-empty-elt').forEach((node) => {
@@ -125,6 +125,105 @@ export function prepareArticleHtml(html) {
   });
 
   return DOMPurify.sanitize(root.innerHTML, {
+    ADD_TAGS: ['style'],
     ADD_ATTR: ['srcset', 'decoding', 'loading'],
   });
+}
+
+const MAIN_PAGE_TITLES = new Set(['עמוד ראשי', 'main page']);
+
+function isMainPageTitle(title) {
+  return MAIN_PAGE_TITLES.has(normalizeTitle(title).toLowerCase());
+}
+
+function isBlockedStart(title, targetTitle) {
+  const normalized = normalizeTitle(title);
+  if (!normalized) return true;
+  if (isMainPageTitle(normalized)) return true;
+  if (targetTitle && sameTitle(normalized, targetTitle)) return true;
+  return normalized.includes(':');
+}
+
+function utcParts(date) {
+  return {
+    year: String(date.getUTCFullYear()),
+    month: String(date.getUTCMonth() + 1).padStart(2, '0'),
+    day: String(date.getUTCDate()).padStart(2, '0'),
+  };
+}
+
+function utcDateKey(date = new Date()) {
+  const parts = utcParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function pickFromPool(titles, dateKey) {
+  if (!titles.length) return '';
+  let hash = 2166136261;
+  for (let i = 0; i < dateKey.length; i += 1) {
+    hash ^= dateKey.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return titles[(hash >>> 0) % titles.length];
+}
+
+async function fetchPopularTitles(targetTitle) {
+  const now = new Date();
+  const yesterday = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() - 1,
+  ));
+  const parts = utcParts(yesterday);
+  const endpoint = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/he.wikipedia/all-access/${parts.year}/${parts.month}/${parts.day}`;
+  const response = await fetch(endpoint);
+  if (!response.ok) throw new Error('pageviews');
+  const data = await response.json();
+  const articles = data.items?.[0]?.articles ?? [];
+  const seen = new Set();
+  const pool = [];
+  articles
+    .slice()
+    .sort((a, b) => (Number(a.rank) || 0) - (Number(b.rank) || 0))
+    .forEach((item) => {
+      const title = normalizeTitle(item.article);
+      if (seen.has(title) || isBlockedStart(title, targetTitle)) return;
+      seen.add(title);
+      pool.push(title);
+    });
+  return pool;
+}
+
+async function fetchRandomTitle(targetTitle) {
+  const endpoint = new URL(API);
+  endpoint.searchParams.set('action', 'query');
+  endpoint.searchParams.set('list', 'random');
+  endpoint.searchParams.set('rnnamespace', '0');
+  endpoint.searchParams.set('rnlimit', '8');
+  endpoint.searchParams.set('format', 'json');
+  endpoint.searchParams.set('origin', '*');
+
+  const response = await fetch(endpoint);
+  if (!response.ok) throw new Error('network');
+  const data = await response.json();
+  const picked = (data.query?.random ?? [])
+    .map((item) => normalizeTitle(item.title))
+    .find((title) => !isBlockedStart(title, targetTitle));
+  if (!picked) throw new Error('missing');
+  return picked;
+}
+
+export async function resolveStartTitle(storedStart, targetTitle) {
+  const start = normalizeTitle(storedStart);
+  const target = normalizeTitle(targetTitle);
+  if (!isMainPageTitle(start)) return start;
+
+  try {
+    const pool = await fetchPopularTitles(target);
+    const picked = pickFromPool(pool, utcDateKey());
+    if (picked) return picked;
+  } catch (error) {
+    console.error(error);
+  }
+  return fetchRandomTitle(target);
 }

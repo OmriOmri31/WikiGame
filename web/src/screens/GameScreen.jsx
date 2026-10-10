@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { accountName } from '../account';
 import { db } from '../firebase';
+import { exitFullscreen } from '../fullscreen';
+import { formatDuration } from '../time';
 import {
   fetchArticle,
   normalizeTitle,
   prepareArticleHtml,
+  resolveStartTitle,
   sameTitle,
   titleFromHref,
 } from '../wikipedia';
 
 const SECRET_CODE = 'Coys31';
 
-export default function GameScreen({ playerName, onFinish }) {
+export default function GameScreen({ user, onFinish }) {
   const [startTitle, setStartTitle] = useState('');
   const [goalTitle, setGoalTitle] = useState('');
   const [article, setArticle] = useState(null);
@@ -63,8 +67,8 @@ export default function GameScreen({ playerName, onFinish }) {
           throw new Error('missing');
         }
         const data = snapshot.data();
-        const start = normalizeTitle(data.startArticleTitle);
         const goal = normalizeTitle(data.targetArticleTitle);
+        const start = await resolveStartTitle(data.startArticleTitle, goal);
         if (!start || !goal) throw new Error('missing');
 
         const [startArticle, targetArticle] = await Promise.all([
@@ -108,7 +112,7 @@ export default function GameScreen({ playerName, onFinish }) {
     if (!running) return undefined;
     const id = window.setInterval(() => {
       setElapsed((Date.now() - startRef.current) / 1000);
-    }, 200);
+    }, 50);
     return () => window.clearInterval(id);
   }, [running]);
 
@@ -146,13 +150,20 @@ export default function GameScreen({ playerName, onFinish }) {
     if (finishedRef.current) return;
     finishedRef.current = true;
     setRunning(false);
-    const timeTaken = Math.round((Date.now() - startRef.current) * 100) / 100;
+    exitFullscreen();
+    const timeTaken = Number(((Date.now() - startRef.current) / 1000).toFixed(3));
     setFinalTime(timeTaken);
     setCongratsOpen(true);
 
+    if (!user?.uid) {
+      setSaveError(true);
+      return;
+    }
+
     try {
       const ref = await addDoc(collection(db, 'scores'), {
-        name: playerName,
+        uid: user.uid,
+        name: accountName(user),
         pagesVisited: pageCount,
         timeTaken,
         timestamp: Timestamp.now(),
@@ -284,14 +295,14 @@ export default function GameScreen({ playerName, onFinish }) {
           {goalTitle}
         </button>
         <div className="info-row">
-          <span>זמן: <bdi>{shownTime.toFixed(finalTime == null ? 1 : 2)}</bdi> שניות</span>
+          <span>זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime)}</bdi></span>
           <span>מספר הדפים: <bdi>{pages}</bdi></span>
         </div>
         {loading ? <div className="loading-bar" role="progressbar" aria-label="טוען ערך" /> : null}
       </header>
 
       <div className={`article-scroll ${loading ? 'is-loading' : ''}`} ref={scrollRef}>
-        <article className="article-inner">
+        <article className="article-inner mw-parser-output">
           <h1>{article.title}</h1>
           <div
             className="article-body"
@@ -310,12 +321,12 @@ export default function GameScreen({ playerName, onFinish }) {
               חזור למהלך המשחק
             </button>
             <div className="info-row">
-              <span>זמן: <bdi>{shownTime.toFixed(finalTime == null ? 1 : 2)}</bdi> שניות</span>
+              <span>זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime)}</bdi></span>
               <span>מספר הדפים: <bdi>{pages}</bdi></span>
             </div>
           </header>
           <div className="article-scroll">
-            <article className="article-inner">
+            <article className="article-inner mw-parser-output">
               <h1>{goalArticle.title}</h1>
               <p className="lede">זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.</p>
               <div
@@ -356,7 +367,7 @@ export default function GameScreen({ playerName, onFinish }) {
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
             <h2>כל הכבוד!</h2>
-            <p>סיימת את המשחק ב-<bdi>{(finalTime ?? 0).toFixed(2)}</bdi> שניות.</p>
+            <p>סיימת את המשחק ב-<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0)}</bdi>.</p>
             <p>מספר הדפים שביקרת: <bdi>{pages}</bdi></p>
             {saveError ? (
               <>

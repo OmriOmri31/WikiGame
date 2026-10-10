@@ -1,25 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { formatDuration, timestampMillis } from '../time';
 
 // Created while checking write access. Firestore rules allow create but not delete.
-const IGNORED_SCORE_IDS = new Set(['Gxd5TIH6fiMMgK4qqznp']);
+const IGNORED_SCORE_IDS = new Set([
+  'Gxd5TIH6fiMMgK4qqznp',
+  'WBwWbEGmFysvc440EjO8',
+]);
 
-function millis(row) {
-  const stamp = row.timestamp;
-  if (!stamp) return 0;
-  if (typeof stamp.toMillis === 'function') return stamp.toMillis();
-  if (typeof stamp.seconds === 'number') return stamp.seconds * 1000;
-  return 0;
+function latestForUser(rows, uid) {
+  if (!uid) return null;
+  return rows.reduce((latest, row) => {
+    if (row.uid !== uid) return latest;
+    if (!latest || timestampMillis(row.timestamp) >= timestampMillis(latest.timestamp)) return row;
+    return latest;
+  }, null);
 }
 
-function formatTime(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return '—';
-  return number.toFixed(2);
-}
-
-export default function Leaderboard({ playerName, highlightId, onHome }) {
+export default function Leaderboard({ user, highlightId, onHome }) {
   const [scores, setScores] = useState([]);
   const [playerScore, setPlayerScore] = useState(null);
   const [playerRank, setPlayerRank] = useState(null);
@@ -44,20 +43,19 @@ export default function Leaderboard({ playerName, highlightId, onHome }) {
           if (pages) return pages;
           const time = Number(a.timeTaken) - Number(b.timeTaken);
           if (time) return time;
-          return millis(a) - millis(b);
+          return timestampMillis(a.timestamp) - timestampMillis(b.timestamp);
         });
 
         if (cancelled) return;
 
         const top = rows.slice(0, 10);
-        let mine = highlightId ? rows.find((row) => row.id === highlightId) : null;
-        if (!mine && playerName) {
-          const own = rows.filter((row) => row.name === playerName);
-          mine = own.reduce((latest, row) => {
-            if (!latest || millis(row) >= millis(latest)) return row;
-            return latest;
-          }, null);
+        const uid = user?.uid || '';
+        let mine = null;
+        if (highlightId && uid) {
+          const highlighted = rows.find((row) => row.id === highlightId && row.uid === uid);
+          if (highlighted) mine = highlighted;
         }
+        if (!mine) mine = latestForUser(rows, uid);
 
         setScores(top);
         setPlayerScore(mine || null);
@@ -74,7 +72,7 @@ export default function Leaderboard({ playerName, highlightId, onHome }) {
     return () => {
       cancelled = true;
     };
-  }, [highlightId, playerName]);
+  }, [highlightId, user]);
 
   const highlightedId = playerScore?.id;
 
@@ -96,7 +94,7 @@ export default function Leaderboard({ playerName, highlightId, onHome }) {
             <span>מקום</span>
             <span>שם</span>
             <span>צעדים</span>
-            <span>זמן (שניות)</span>
+            <span>זמן</span>
           </div>
           {scores.map((row, index) => (
             <div
@@ -106,7 +104,7 @@ export default function Leaderboard({ playerName, highlightId, onHome }) {
               <span className="num">{index + 1}</span>
               <span className="name">{row.name}</span>
               <span className="num" dir="ltr">{row.pagesVisited}</span>
-              <span className="num" dir="ltr">{formatTime(row.timeTaken)}</span>
+              <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
             </div>
           ))}
         </div>
@@ -121,13 +119,13 @@ export default function Leaderboard({ playerName, highlightId, onHome }) {
             <span className="num">{playerRank}</span>
             <span className="name">{playerScore.name}</span>
             <span className="num" dir="ltr">{playerScore.pagesVisited}</span>
-            <span className="num" dir="ltr">{formatTime(playerScore.timeTaken)}</span>
+            <span className="num"><bdi className="clock" dir="ltr">{formatDuration(playerScore.timeTaken)}</bdi></span>
           </div>
         </div>
       ) : null}
 
       <button className="primary board-home" type="button" onClick={() => onHomeRef.current()}>
-        {playerName ? 'משחק חדש' : 'חזרה'}
+        {user ? 'משחק חדש' : 'חזרה'}
       </button>
     </main>
   );

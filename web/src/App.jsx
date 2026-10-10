@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, redirectResult } from './firebase';
+import { authErrorMessage } from './account';
+import { exitFullscreen } from './fullscreen';
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
 import GameScreen from './screens/GameScreen';
@@ -6,35 +10,48 @@ import Leaderboard from './screens/Leaderboard';
 
 export default function App() {
   const [screen, setScreen] = useState('splash');
-  const [playerName, setPlayerName] = useState('');
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authNotice, setAuthNotice] = useState('');
   const [result, setResult] = useState(null);
+  const showHome = useCallback(() => setScreen('home'), []);
 
   useEffect(() => {
     document.title = 'משחק הוויקיפדיה';
   }, [screen]);
 
+  useEffect(() => {
+    if (screen !== 'game') exitFullscreen();
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen === 'game' && authReady && !user) setScreen('home');
+  }, [screen, authReady, user]);
+
+  useEffect(() => {
+    let active = true;
+    redirectResult.catch((error) => {
+      console.error(error);
+      if (active) setAuthNotice(authErrorMessage(error));
+    });
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   if (screen === 'splash') {
-    return <SplashScreen onDone={() => setScreen('home')} />;
+    return <SplashScreen onDone={showHome} />;
   }
 
-  if (screen === 'home') {
-    return (
-      <HomeScreen
-        initialName={playerName}
-        onStart={(name) => {
-          setPlayerName(name);
-          setResult(null);
-          setScreen('game');
-        }}
-        onLeaderboard={() => setScreen('leaderboard')}
-      />
-    );
-  }
-
-  if (screen === 'game') {
+  if (screen === 'game' && user) {
     return (
       <GameScreen
-        playerName={playerName}
+        user={user}
         onFinish={(score) => {
           setResult(score);
           setScreen('leaderboard');
@@ -43,11 +60,42 @@ export default function App() {
     );
   }
 
+  if (screen === 'game' && !user) {
+    return (
+      <main className="screen">
+        <p className="status">טוען…</p>
+      </main>
+    );
+  }
+
+  if (screen === 'leaderboard') {
+    return (
+      <Leaderboard
+        user={user}
+        highlightId={result?.id || ''}
+        onHome={() => setScreen('home')}
+      />
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <main className="screen">
+        <p className="status">טוען…</p>
+      </main>
+    );
+  }
+
   return (
-    <Leaderboard
-      playerName={playerName}
-      highlightId={result?.id || ''}
-      onHome={() => setScreen('home')}
+    <HomeScreen
+      user={user}
+      redirectError={authNotice}
+      onStart={() => {
+        if (!user) return;
+        setResult(null);
+        setScreen('game');
+      }}
+      onLeaderboard={() => setScreen('leaderboard')}
     />
   );
 }

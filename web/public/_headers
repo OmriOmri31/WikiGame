@@ -1,0 +1,2 @@
+/*
+  Content-Security-Policy: base-uri 'self'; object-src 'none'; script-src 'self' https://apis.google.com https://www.gstatic.com https://www.google.com https://accounts.google.com https://wikigame-5ebec.firebaseapp.com https://*.googleapis.com
