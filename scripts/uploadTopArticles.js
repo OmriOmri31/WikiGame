@@ -1,9 +1,9 @@
 // scripts/uploadTopArticles.js
 
 const admin = require('firebase-admin');
-const topArticles = require('../assets/top_articles.json');
+const topArticles = require('../data/top_articles.json');
 
-// Load the service account key JSON file
+// Service account key is not committed. Place it at the repo root as firebase-key.json.
 const serviceAccount = require('../firebase-key.json');
 
 admin.initializeApp({

@@ -3,6 +3,7 @@
 import requests
 import json
 import datetime
+from pathlib import Path
 
 def fetch_top_pages(date, project='he.wikipedia', access='all-access'):
     """
@@ -12,7 +13,7 @@ def fetch_top_pages(date, project='he.wikipedia', access='all-access'):
     year, month, day = date.year, date.month, date.day
     url = f'https://wikimedia.org/api/rest_v1/metrics/pageviews/top/{project}/{access}/{year}/{month:02}/{day:02}'
     headers = {
-        'User-Agent': 'WikiGameBot/1.0 (your_email@example.com)'
+        'User-Agent': 'WikiGame/1.0 (https://github.com/OmriOmri31/WikiGame)'
     }
     response = requests.get(url, headers=headers)
 
@@ -39,7 +40,7 @@ def get_past_dates(num_days):
     excluding today.
     """
     dates = []
-    utc_now = datetime.datetime.utcnow()
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
     for i in range(num_days):
         date = utc_now - datetime.timedelta(days=i+1)
         dates.append(date)
@@ -70,7 +71,9 @@ def main():
         # Convert the set to a list and sort it for consistency
         top_pages_list = sorted(top_pages_set)
         # Save the top pages to a JSON file
-        with open('WikiGameExpo/assets/top_articles.json', 'w', encoding='utf-8') as f:
+        output = Path(__file__).resolve().parent / 'data' / 'top_articles.json'
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open('w', encoding='utf-8') as f:
             json.dump(top_pages_list, f, ensure_ascii=False, indent=4)
         print(f'Successfully saved {len(top_pages_list)} articles to top_articles.json')
 
