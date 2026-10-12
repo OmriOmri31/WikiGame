@@ -72,6 +72,10 @@ export default function App() {
           setResult(score);
           setScreen('leaderboard');
         }}
+        onExit={() => {
+          setResult(null);
+          setScreen('home');
+        }}
       />
     );
   }

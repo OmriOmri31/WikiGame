@@ -21,6 +21,8 @@ export function spring({
   velocity = 0,
   response = 0.3,
   dampingRatio = 1,
+  restDistance = REST_DISTANCE,
+  restVelocity = REST_VELOCITY,
   onUpdate,
   onRest,
 }) {
@@ -44,7 +46,7 @@ export function spring({
       remaining -= h;
     }
     onUpdate(x);
-    if (Math.abs(x - to) < REST_DISTANCE && Math.abs(v) < REST_VELOCITY) {
+    if (Math.abs(x - to) < restDistance && Math.abs(v) < restVelocity) {
       onUpdate(to);
       onRest?.();
       return;

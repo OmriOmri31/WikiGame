@@ -3,6 +3,7 @@ import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
 import { db } from '../firebase';
 import { exitFullscreen } from '../fullscreen';
+import GameMenu from '../GameMenu';
 import Sheet from '../Sheet';
 import { formatDuration } from '../time';
 import {
@@ -23,7 +24,7 @@ function loadErrorMessage(mode, pair) {
   return 'לא ניתן לטעון את המאמרים היומיים.';
 }
 
-export default function GameScreen({ user, mode = 'daily', pair = null, onFinish }) {
+export default function GameScreen({ user, mode = 'daily', pair = null, onFinish, onExit }) {
   const [startTitle, setStartTitle] = useState('');
   const [goalTitle, setGoalTitle] = useState('');
   const [article, setArticle] = useState(null);
@@ -55,6 +56,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const pendingHashRef = useRef('');
   const scrollRef = useRef(null);
   const toastTimerRef = useRef(0);
+  const runRef = useRef(0);
+  const lockedPairRef = useRef(null);
   const tapsRef = useRef({ count: 0, last: 0 });
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
@@ -71,6 +74,13 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     let cancelled = false;
 
     async function chooseTitles() {
+      if (lockedPairRef.current) {
+        return {
+          start: lockedPairRef.current.start,
+          goal: lockedPairRef.current.goal,
+          fixed: true,
+        };
+      }
       if (fixedStart && fixedGoal) {
         return { start: normalizeTitle(fixedStart), goal: normalizeTitle(fixedGoal), fixed: true };
       }
@@ -90,6 +100,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     async function loadGame() {
       setFatal('');
       setLoading(true);
+      loadingRef.current = true;
       try {
         let chosen = await chooseTitles();
         let startArticle;
@@ -109,6 +120,10 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
         ]);
         if (cancelled) return;
 
+        lockedPairRef.current = {
+          start: startArticle.title,
+          goal: targetArticle.title,
+        };
         goalTitleRef.current = targetArticle.title;
         currentTitleRef.current = startArticle.title;
         startTitleRef.current = startArticle.title;
@@ -128,7 +143,10 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
         console.error(error);
         if (!cancelled) setFatal(loadErrorMessage(mode, fixedStart ? { startTitle: fixedStart } : null));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
       }
     }
 
@@ -217,6 +235,39 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     }
   }
 
+  function restartGame() {
+    if (finishedRef.current) return;
+    runRef.current += 1;
+    loadingRef.current = true;
+    finishedRef.current = false;
+    pagesRef.current = 1;
+    if (lockedPairRef.current) {
+      currentTitleRef.current = lockedPairRef.current.start;
+      pathRef.current = [lockedPairRef.current.start];
+    }
+    setPages(1);
+    setElapsed(0);
+    setFinalTime(null);
+    setRunning(false);
+    setGoalOpen(false);
+    setSecretOpen(false);
+    setCongratsOpen(false);
+    setSaveError(false);
+    setToast('');
+    setLoading(true);
+    scrollRef.current?.scrollTo(0, 0);
+    setAttempt((value) => value + 1);
+  }
+
+  function giveUp() {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    runRef.current += 1;
+    loadingRef.current = false;
+    exitFullscreen();
+    onExit();
+  }
+
   async function openArticle(title, hash = '') {
     if (finishedRef.current || loadingRef.current) return;
     if (sameTitle(title, currentTitleRef.current)) {
@@ -227,12 +278,13 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
       return;
     }
 
+    const run = runRef.current;
     loadingRef.current = true;
     setLoading(true);
     try {
       const next = await fetchArticle(title);
       const html = await prepareArticleHtml(next.html);
-      if (finishedRef.current) return;
+      if (finishedRef.current || run !== runRef.current) return;
 
       const count = pagesRef.current + 1;
       pagesRef.current = count;
@@ -250,8 +302,10 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
       console.error(error);
       showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
+      if (run === runRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }
 
@@ -328,6 +382,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
 
   return (
     <main className="game">
+      {congratsOpen ? null : <GameMenu onRestart={restartGame} onExit={giveUp} />}
       <div className="article-scroll" ref={scrollRef}>
         <header className="game-header" onClick={registerHeaderTap}>
           <p className="route-title">{startTitle}</p>

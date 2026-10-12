@@ -233,9 +233,15 @@ a:focus-visible {
   cursor: default;
 }
 
+.secondary.danger {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--danger);
+}
+
 @media (hover: hover) {
   .primary:hover:not(:disabled) { background: var(--blue-pressed); }
   .secondary:hover:not(:disabled) { background: var(--separator); }
+  .secondary.danger:hover:not(:disabled) { background: rgba(255, 59, 48, 0.2); }
 }
 
 .text-button,
@@ -365,6 +371,11 @@ a:focus-visible {
 }
 
 .route-title {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 60px;
   font-weight: 600;
   font-size: 1.05rem;
   letter-spacing: -0.014em;
@@ -390,6 +401,128 @@ a:focus-visible {
   line-height: 1.25;
   cursor: pointer;
   padding: 8px 12px;
+}
+
+.game-menu {
+  position: fixed;
+  z-index: 28;
+  top: max(12px, env(safe-area-inset-top));
+  inset-inline-start: 10px;
+}
+
+.menu-button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: var(--fill);
+  color: var(--label);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 160ms ease-out, background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.menu-button .menu-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.menu-button[aria-expanded="true"] {
+  background: var(--tint);
+  color: var(--blue);
+}
+
+.menu-button:active {
+  transform: scale(0.97);
+  transition-duration: 100ms;
+}
+
+.game-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 12.25rem;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    0 0 0 0.5px rgba(60, 60, 67, 0.18),
+    0 16px 40px rgba(0, 0, 0, 0.16);
+  transform: scale(0.86);
+  transform-origin: calc(100% - 22px) -28px;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.game-menu-panel.is-closing {
+  pointer-events: none;
+}
+
+.game-menu-panel.is-reduced {
+  transform: none;
+  transition: opacity 200ms ease;
+}
+
+.menu-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.game-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--label);
+  font-weight: 500;
+  font-size: 1.02rem;
+  letter-spacing: -0.011em;
+  line-height: 1.2;
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 80ms ease-out;
+}
+
+.game-menu-item + .game-menu-item {
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+.game-menu-item:active {
+  background: var(--separator);
+  transition-duration: 0ms;
+}
+
+.game-menu-item.danger {
+  color: var(--danger);
+}
+
+@media (hover: hover) {
+  .game-menu-item:hover {
+    background: var(--fill);
+  }
+
+  .game-menu-item:active {
+    background: var(--separator);
+  }
 }
 
 .info-row {
@@ -619,6 +752,20 @@ a:focus-visible {
   to { opacity: 1; transform: scale(1); }
 }
 
+.confirm-card h2 {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.confirm-card .lede {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
 .congrats p {
   text-align: center;
   font-size: 1.08rem;
@@ -678,6 +825,7 @@ a:focus-visible {
 .sheet-header .linkish {
   text-align: center;
   font-weight: 600;
+  padding-inline: 60px;
 }
 
 .sheet-body {
@@ -938,8 +1086,14 @@ a:focus-visible {
   .secondary:active:not(:disabled),
   .text-button:active,
   .linkish:active,
-  .target-link:active {
+  .target-link:active,
+  .menu-button:active {
     transform: none;
+  }
+
+  .game-menu-panel {
+    transform: none;
+    transition: opacity 200ms ease;
   }
 }
 
@@ -947,7 +1101,8 @@ a:focus-visible {
   .game-header,
   .sheet-header,
   .board-bar,
-  .toast {
+  .toast,
+  .game-menu-panel {
     background: var(--surface-solid);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -967,6 +1122,8 @@ a:focus-visible {
   .modal-card,
   .score-table,
   .target-link,
+  .menu-button,
+  .game-menu-panel,
   input {
     border: 1px solid var(--label);
   }
@@ -975,7 +1132,8 @@ a:focus-visible {
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .game-header,
   .sheet-header,
-  .board-bar {
+  .board-bar,
+  .game-menu-panel {
     background: var(--surface-solid);
   }
 }
