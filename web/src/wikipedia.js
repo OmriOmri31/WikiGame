@@ -144,17 +144,41 @@ function isBlockedStart(title, targetTitle) {
   return normalized.includes(':');
 }
 
-function utcParts(date) {
-  return {
-    year: String(date.getUTCFullYear()),
-    month: String(date.getUTCMonth() + 1).padStart(2, '0'),
-    day: String(date.getUTCDate()).padStart(2, '0'),
-  };
+const ISRAEL_TIME_ZONE = 'Asia/Jerusalem';
+// A UTC day's pageviews are often unpublished for many hours, and the file can
+// still be revised after it first appears. Lagging three Israel calendar days
+// means the list is already final at 00:00, so the pick does not move again
+// later that day. The Israel date itself is what changes the article.
+const PAGEVIEW_LAG_DAYS = 3;
+
+const israelDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: ISRAEL_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function israelDateParts(date) {
+  const parts = israelDateFormatter.formatToParts(date);
+  const value = (type) => Number(parts.find((part) => part.type === type)?.value);
+  return { year: value('year'), month: value('month'), day: value('day') };
 }
 
-function utcDateKey(date = new Date()) {
-  const parts = utcParts(date);
-  return `${parts.year}-${parts.month}-${parts.day}`;
+function israelDateKey(date = new Date()) {
+  const { year, month, day } = israelDateParts(date);
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+function pageviewDateParts(date = new Date()) {
+  const { year, month, day } = israelDateParts(date);
+  const shifted = new Date(Date.UTC(year, month - 1, day - PAGEVIEW_LAG_DAYS));
+  const pad = (part) => String(part).padStart(2, '0');
+  return {
+    year: String(shifted.getUTCFullYear()),
+    month: pad(shifted.getUTCMonth() + 1),
+    day: pad(shifted.getUTCDate()),
+  };
 }
 
 function pickFromPool(titles, dateKey) {
@@ -167,14 +191,8 @@ function pickFromPool(titles, dateKey) {
   return titles[(hash >>> 0) % titles.length];
 }
 
-async function fetchPopularTitles(targetTitle) {
-  const now = new Date();
-  const yesterday = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate() - 1,
-  ));
-  const parts = utcParts(yesterday);
+async function fetchPopularTitles(targetTitle, date = new Date()) {
+  const parts = pageviewDateParts(date);
   const endpoint = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/he.wikipedia/all-access/${parts.year}/${parts.month}/${parts.day}`;
   const response = await fetch(endpoint);
   if (!response.ok) throw new Error('pageviews');
@@ -191,39 +209,17 @@ async function fetchPopularTitles(targetTitle) {
       seen.add(title);
       pool.push(title);
     });
+  pool.sort((a, b) => (a > b) - (a < b));
   return pool;
 }
 
-async function fetchRandomTitle(targetTitle) {
-  const endpoint = new URL(API);
-  endpoint.searchParams.set('action', 'query');
-  endpoint.searchParams.set('list', 'random');
-  endpoint.searchParams.set('rnnamespace', '0');
-  endpoint.searchParams.set('rnlimit', '8');
-  endpoint.searchParams.set('format', 'json');
-  endpoint.searchParams.set('origin', '*');
-
-  const response = await fetch(endpoint);
-  if (!response.ok) throw new Error('network');
-  const data = await response.json();
-  const picked = (data.query?.random ?? [])
-    .map((item) => normalizeTitle(item.title))
-    .find((title) => !isBlockedStart(title, targetTitle));
-  if (!picked) throw new Error('missing');
-  return picked;
-}
-
-export async function resolveStartTitle(storedStart, targetTitle) {
+export async function resolveStartTitle(storedStart, targetTitle, date = new Date()) {
   const start = normalizeTitle(storedStart);
   const target = normalizeTitle(targetTitle);
   if (!isMainPageTitle(start)) return start;
 
-  try {
-    const pool = await fetchPopularTitles(target);
-    const picked = pickFromPool(pool, utcDateKey());
-    if (picked) return picked;
-  } catch (error) {
-    console.error(error);
-  }
-  return fetchRandomTitle(target);
+  const pool = await fetchPopularTitles(target, date);
+  const picked = pickFromPool(pool, israelDateKey(date));
+  if (!picked) throw new Error('pageviews');
+  return picked;
 }
