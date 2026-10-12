@@ -8,6 +8,7 @@ import { formatDuration } from '../time';
 import {
   fetchArticle,
   normalizeTitle,
+  pickFreePlayPair,
   prepareArticleHtml,
   resolveStartTitle,
   sameTitle,
@@ -16,7 +17,13 @@ import {
 
 const SECRET_CODE = 'Coys31';
 
-export default function GameScreen({ user, onFinish }) {
+function loadErrorMessage(mode, pair) {
+  if (pair?.startTitle) return 'לא ניתן לטעון את הערכים האלה.';
+  if (mode === 'free') return 'לא ניתן לטעון משחק חופשי.';
+  return 'לא ניתן לטעון את המאמרים היומיים.';
+}
+
+export default function GameScreen({ user, mode = 'daily', pair = null, onFinish }) {
   const [startTitle, setStartTitle] = useState('');
   const [goalTitle, setGoalTitle] = useState('');
   const [article, setArticle] = useState(null);
@@ -39,6 +46,8 @@ export default function GameScreen({ user, onFinish }) {
 
   const pagesRef = useRef(1);
   const startRef = useRef(0);
+  const pathRef = useRef([]);
+  const startTitleRef = useRef('');
   const currentTitleRef = useRef('');
   const goalTitleRef = useRef('');
   const finishedRef = useRef(false);
@@ -49,6 +58,8 @@ export default function GameScreen({ user, onFinish }) {
   const tapsRef = useRef({ count: 0, last: 0 });
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
+  const fixedStart = pair?.startTitle || '';
+  const fixedGoal = pair?.goalTitle || '';
 
   function showToast(message) {
     setToast(message);
@@ -59,23 +70,39 @@ export default function GameScreen({ user, onFinish }) {
   useEffect(() => {
     let cancelled = false;
 
+    async function chooseTitles() {
+      if (fixedStart && fixedGoal) {
+        return { start: normalizeTitle(fixedStart), goal: normalizeTitle(fixedGoal), fixed: true };
+      }
+      if (mode === 'free') {
+        const picked = await pickFreePlayPair();
+        return { start: picked.start, goal: picked.goal, fixed: false };
+      }
+      const snapshot = await getDoc(doc(db, 'daily', 'articles'));
+      if (!snapshot.exists()) throw new Error('missing');
+      const data = snapshot.data();
+      const goal = normalizeTitle(data.targetArticleTitle);
+      const start = await resolveStartTitle(data.startArticleTitle, goal);
+      if (!start || !goal) throw new Error('missing');
+      return { start, goal, fixed: true };
+    }
+
     async function loadGame() {
       setFatal('');
       setLoading(true);
       try {
-        const snapshot = await getDoc(doc(db, 'daily', 'articles'));
-        if (!snapshot.exists()) {
-          throw new Error('missing');
+        let chosen = await chooseTitles();
+        let startArticle;
+        let targetArticle;
+        for (let index = 0; index < 3; index += 1) {
+          [startArticle, targetArticle] = await Promise.all([
+            fetchArticle(chosen.start),
+            fetchArticle(chosen.goal),
+          ]);
+          if (!sameTitle(startArticle.title, targetArticle.title)) break;
+          if (chosen.fixed || index === 2) throw new Error('same');
+          chosen = await chooseTitles();
         }
-        const data = snapshot.data();
-        const goal = normalizeTitle(data.targetArticleTitle);
-        const start = await resolveStartTitle(data.startArticleTitle, goal);
-        if (!start || !goal) throw new Error('missing');
-
-        const [startArticle, targetArticle] = await Promise.all([
-          fetchArticle(start),
-          fetchArticle(goal),
-        ]);
         const [startHtml, targetHtml] = await Promise.all([
           prepareArticleHtml(startArticle.html),
           prepareArticleHtml(targetArticle.html),
@@ -84,6 +111,8 @@ export default function GameScreen({ user, onFinish }) {
 
         goalTitleRef.current = targetArticle.title;
         currentTitleRef.current = startArticle.title;
+        startTitleRef.current = startArticle.title;
+        pathRef.current = [startArticle.title];
         pagesRef.current = 1;
         setPages(1);
         setStartTitle(startArticle.title);
@@ -97,7 +126,7 @@ export default function GameScreen({ user, onFinish }) {
         setRunning(true);
       } catch (error) {
         console.error(error);
-        if (!cancelled) setFatal('לא ניתן לטעון את המאמרים היומיים.');
+        if (!cancelled) setFatal(loadErrorMessage(mode, fixedStart ? { startTitle: fixedStart } : null));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -107,7 +136,7 @@ export default function GameScreen({ user, onFinish }) {
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, mode, fixedStart, fixedGoal]);
 
   useEffect(() => {
     if (!running) return undefined;
@@ -161,6 +190,7 @@ export default function GameScreen({ user, onFinish }) {
       return;
     }
 
+    const scoreMode = mode === 'free' ? 'free' : 'daily';
     try {
       const ref = await addDoc(collection(db, 'scores'), {
         uid: user.uid,
@@ -168,12 +198,17 @@ export default function GameScreen({ user, onFinish }) {
         pagesVisited: pageCount,
         timeTaken,
         timestamp: Timestamp.now(),
+        mode: scoreMode,
+        startTitle: startTitleRef.current,
+        goalTitle: goalTitleRef.current,
+        path: pathRef.current.slice(),
       });
       window.setTimeout(() => {
         onFinishRef.current({
           id: ref.id,
           timeTaken,
           pagesVisited: pageCount,
+          mode: scoreMode,
         });
       }, 2000);
     } catch (error) {
@@ -203,6 +238,7 @@ export default function GameScreen({ user, onFinish }) {
       pagesRef.current = count;
       setPages(count);
       currentTitleRef.current = next.title;
+      pathRef.current = [...pathRef.current, next.title];
       pendingHashRef.current = hash;
       setArticle(next);
       setArticleHtml(html);
@@ -385,6 +421,7 @@ export default function GameScreen({ user, onFinish }) {
                     id: '',
                     timeTaken: finalTime ?? 0,
                     pagesVisited: pages,
+                    mode: mode === 'free' ? 'free' : 'daily',
                   })}
                 >
                   אל טבלת השיאים

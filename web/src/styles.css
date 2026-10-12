@@ -255,6 +255,25 @@ a:focus-visible {
 
 .text-button.danger { color: var(--danger); }
 
+.text-button.compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+
+.text-button.compact:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.text-button.compact:active:not(:disabled) {
+  background: var(--tint);
+}
+
 .action-list {
   margin-top: 14px;
   background: var(--fill);
@@ -684,6 +703,15 @@ a:focus-visible {
   flex: 1;
 }
 
+.board h2 {
+  margin: 8px 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-align: start;
+}
+
 .score-table {
   margin-top: 8px;
   background: var(--surface-solid);
@@ -693,7 +721,7 @@ a:focus-visible {
 }
 
 .score-head,
-.score-row {
+.score-main {
   display: grid;
   grid-template-columns: 3.2rem minmax(0, 1.5fr) 4.5rem 13ch;
   gap: 8px;
@@ -701,6 +729,81 @@ a:focus-visible {
   padding: 12px 14px;
   min-height: 48px;
 }
+
+.score-main.free-main,
+.score-head.free-main {
+  grid-template-columns: minmax(0, 1fr) 4.5rem 13ch;
+}
+
+.free-board { margin-top: 28px; }
+
+.score-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  padding: 0 6px 8px;
+}
+
+.free-route {
+  margin: 0;
+  padding: 0 14px 2px;
+  color: var(--secondary-label);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.free-route bdi {
+  color: var(--label);
+  font-weight: 600;
+}
+
+.path-card {
+  width: min(520px, 100%);
+  max-height: min(78dvh, 640px);
+  overflow: auto;
+}
+
+.path-card h2 {
+  margin: 0 0 12px;
+  text-align: center;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.path-card .lede { margin-bottom: 0; }
+
+.path-card .primary { margin-top: 18px; }
+
+.path-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.35rem;
+  margin: 0;
+  direction: ltr;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.path-step {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.path-sep {
+  color: var(--secondary-label);
+  font-weight: 500;
+}
+
+.path-line a {
+  color: var(--blue);
+  font-weight: 600;
+  text-decoration: none;
+  padding: 4px 1px;
+}
+
+.path-line a:hover { text-decoration: underline; }
 
 .score-head {
   font-size: 0.75rem;
@@ -796,13 +899,20 @@ a:focus-visible {
   .board-scroll { padding-inline: 12px; }
 
   .score-head,
-  .score-row {
+  .score-main {
     grid-template-columns: 2.2rem minmax(0, 1fr) 3.2rem 12.5ch;
     gap: 4px;
     padding-inline: 10px;
   }
 
+  .score-main.free-main,
+  .score-head.free-main {
+    grid-template-columns: minmax(0, 1fr) 3.2rem 12.5ch;
+  }
+
   .score-head { font-size: 0.7rem; }
+
+  .free-route { padding-inline: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

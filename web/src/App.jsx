@@ -14,7 +14,20 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [authNotice, setAuthNotice] = useState('');
   const [result, setResult] = useState(null);
+  const [match, setMatch] = useState({ mode: 'daily', pair: null, id: 0 });
   const showHome = useCallback(() => setScreen('home'), []);
+
+  function beginGame(next) {
+    if (!user) return;
+    const nextPair = next.pair?.startTitle && next.pair?.goalTitle ? next.pair : null;
+    setResult(null);
+    setMatch({
+      mode: next.mode === 'free' ? 'free' : 'daily',
+      pair: nextPair,
+      id: Date.now(),
+    });
+    setScreen('game');
+  }
 
   useEffect(() => {
     document.title = 'משחק הוויקיפדיה';
@@ -51,7 +64,10 @@ export default function App() {
   if (screen === 'game' && user) {
     return (
       <GameScreen
+        key={match.id}
         user={user}
+        mode={match.mode}
+        pair={match.pair}
         onFinish={(score) => {
           setResult(score);
           setScreen('leaderboard');
@@ -73,7 +89,12 @@ export default function App() {
       <Leaderboard
         user={user}
         highlightId={result?.id || ''}
+        highlightMode={result?.mode || ''}
         onHome={() => setScreen('home')}
+        onPlayAgain={(row) => beginGame({
+          mode: row.mode === 'free' ? 'free' : 'daily',
+          pair: { startTitle: row.startTitle, goalTitle: row.goalTitle },
+        })}
       />
     );
   }
@@ -90,11 +111,8 @@ export default function App() {
     <HomeScreen
       user={user}
       redirectError={authNotice}
-      onStart={() => {
-        if (!user) return;
-        setResult(null);
-        setScreen('game');
-      }}
+      onStart={() => beginGame({ mode: 'daily' })}
+      onFreePlay={() => beginGame({ mode: 'free' })}
       onLeaderboard={() => setScreen('leaderboard')}
     />
   );

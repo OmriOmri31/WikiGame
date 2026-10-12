@@ -16,6 +16,11 @@ export function sameTitle(a, b) {
   return normalizeTitle(a) === normalizeTitle(b);
 }
 
+export function articleUrl(title) {
+  const slug = encodeURIComponent(normalizeTitle(title).replace(/ /g, '_'));
+  return `https://he.wikipedia.org/wiki/${slug}`;
+}
+
 /**
  * Classify a Wikipedia href.
  * Hash links stay on the page. Only Hebrew Wikipedia articles are playable.
@@ -170,15 +175,24 @@ function israelDateKey(date = new Date()) {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
-function pageviewDateParts(date = new Date()) {
+function pageviewDateParts(date = new Date(), extraLag = 0) {
   const { year, month, day } = israelDateParts(date);
-  const shifted = new Date(Date.UTC(year, month - 1, day - PAGEVIEW_LAG_DAYS));
+  const shifted = new Date(Date.UTC(year, month - 1, day - PAGEVIEW_LAG_DAYS - extraLag));
   const pad = (part) => String(part).padStart(2, '0');
   return {
     year: String(shifted.getUTCFullYear()),
     month: pad(shifted.getUTCMonth() + 1),
     day: pad(shifted.getUTCDate()),
   };
+}
+
+async function fetchTopArticles(date, extraLag = 0) {
+  const parts = pageviewDateParts(date, extraLag);
+  const endpoint = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/he.wikipedia/all-access/${parts.year}/${parts.month}/${parts.day}`;
+  const response = await fetch(endpoint);
+  if (!response.ok) throw new Error('pageviews');
+  const data = await response.json();
+  return data.items?.[0]?.articles ?? [];
 }
 
 function pickFromPool(titles, dateKey) {
@@ -192,12 +206,7 @@ function pickFromPool(titles, dateKey) {
 }
 
 async function fetchPopularTitles(targetTitle, date = new Date()) {
-  const parts = pageviewDateParts(date);
-  const endpoint = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/he.wikipedia/all-access/${parts.year}/${parts.month}/${parts.day}`;
-  const response = await fetch(endpoint);
-  if (!response.ok) throw new Error('pageviews');
-  const data = await response.json();
-  const articles = data.items?.[0]?.articles ?? [];
+  const articles = await fetchTopArticles(date, 0);
   const seen = new Set();
   const pool = [];
   articles
@@ -211,6 +220,69 @@ async function fetchPopularTitles(targetTitle, date = new Date()) {
     });
   pool.sort((a, b) => (a > b) - (a < b));
   return pool;
+}
+
+// Daily play uses one day's most-read pages. Free play keeps that filter, then
+// opens it across the previous days and draws a new pair every game.
+const FREE_PLAY_EXTRA_DAYS = 6;
+
+function isFreePlayCandidate(title) {
+  if (isBlockedStart(title, '')) return false;
+  return !normalizeTitle(title).includes('(פירושונים)');
+}
+
+let freePlayPoolCache = { key: '', titles: null, pending: null };
+
+async function freePlayPool(date = new Date()) {
+  const key = israelDateKey(date);
+  if (freePlayPoolCache.key === key && freePlayPoolCache.titles) return freePlayPoolCache.titles;
+  if (freePlayPoolCache.key === key && freePlayPoolCache.pending) return freePlayPoolCache.pending;
+
+  const pending = (async () => {
+    const lags = Array.from({ length: FREE_PLAY_EXTRA_DAYS + 1 }, (_, index) => index);
+    const results = await Promise.allSettled(lags.map((extra) => fetchTopArticles(date, extra)));
+    const seen = new Set();
+    const pool = [];
+    results.forEach((result) => {
+      if (result.status !== 'fulfilled') return;
+      result.value.forEach((item) => {
+        const title = normalizeTitle(item.article);
+        if (seen.has(title) || !isFreePlayCandidate(title)) return;
+        seen.add(title);
+        pool.push(title);
+      });
+    });
+    if (pool.length < 2) throw new Error('pageviews');
+    return pool;
+  })().then((titles) => {
+    freePlayPoolCache = { key, titles, pending: null };
+    return titles;
+  }).catch((error) => {
+    if (freePlayPoolCache.key === key) freePlayPoolCache = { key: '', titles: null, pending: null };
+    throw error;
+  });
+
+  freePlayPoolCache = { key, titles: null, pending };
+  return pending;
+}
+
+let lastFreePlayKey = '';
+
+export async function pickFreePlayPair(date = new Date()) {
+  const pool = await freePlayPool(date);
+  let startIndex = 0;
+  let goalIndex = 1;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    startIndex = Math.floor(Math.random() * pool.length);
+    goalIndex = Math.floor(Math.random() * (pool.length - 1));
+    if (goalIndex >= startIndex) goalIndex += 1;
+    const key = `${pool[startIndex]}\n${pool[goalIndex]}`;
+    if (key !== lastFreePlayKey || pool.length < 3) {
+      lastFreePlayKey = key;
+      break;
+    }
+  }
+  return { start: pool[startIndex], goal: pool[goalIndex] };
 }
 
 export async function resolveStartTitle(storedStart, targetTitle, date = new Date()) {

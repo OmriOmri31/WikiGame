@@ -13,22 +13,12 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { accountName, authErrorMessage } from '../account';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
-import { formatDuration, timestampMillis } from '../time';
+import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 
-const LEDE = 'כל יום מתחילים בערך פופולרי אחר, ומגיעים לערך המטרה רק דרך קישורים בתוך ויקיפדיה. בלי חיפוש ובלי קישורים החוצה. פחות צעדים מנצח, ובשוויון — הזמן הקצר יותר.';
+const LEDE = 'כל יום מתחילים בערך פופולרי אחר, ומגיעים לערך המטרה רק דרך קישורים בתוך ויקיפדיה. בלי חיפוש ובלי קישורים החוצה. פחות צעדים מנצח, ובשוויון — הזמן הקצר יותר. במשחק החופשי כל סיבוב מקבל זוג ערכים אחר, בלי הגבלה.';
 
 function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function formatScoreDate(stamp) {
-  const millis = timestampMillis(stamp);
-  if (!millis) return '—';
-  return new Intl.DateTimeFormat('he-IL', {
-    day: 'numeric',
-    month: 'numeric',
-    year: 'numeric',
-  }).format(new Date(millis));
 }
 
 async function loadPersonalScores(uid) {
@@ -43,7 +33,7 @@ async function loadPersonalScores(uid) {
   }
 }
 
-export default function HomeScreen({ user, redirectError, onStart, onLeaderboard }) {
+export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard }) {
   const [mode, setMode] = useState('sign-in');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -75,8 +65,9 @@ export default function HomeScreen({ user, redirectError, onStart, onLeaderboard
     loadPersonalScores(user.uid)
       .then((rows) => {
         if (cancelled) return;
-        rows.sort((a, b) => timestampMillis(b) - timestampMillis(a));
-        setMyScores(rows);
+        const dailyRows = rows.filter((row) => row.mode !== 'free');
+        dailyRows.sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
+        setMyScores(dailyRows);
       })
       .catch((loadError) => {
         console.error(loadError);
@@ -100,6 +91,11 @@ export default function HomeScreen({ user, redirectError, onStart, onLeaderboard
   function startGame() {
     enterFullscreen();
     onStart();
+  }
+
+  function startFreePlay() {
+    enterFullscreen();
+    onFreePlay();
   }
 
   async function submitSignIn(event) {
@@ -246,6 +242,7 @@ export default function HomeScreen({ user, redirectError, onStart, onLeaderboard
           <>
             <p className="greeting">שלום, {greeting}</p>
             <button className="primary" type="button" onClick={startGame}>התחל</button>
+            <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
             <div className="action-list">
               <button className="text-button" type="button" onClick={onLeaderboard}>
                 טבלת השיאים
@@ -255,8 +252,8 @@ export default function HomeScreen({ user, redirectError, onStart, onLeaderboard
               </button>
             </div>
             {error ? <p className="form-error" role="alert">{error}</p> : null}
-            <section className="my-scores" aria-label="התוצאות שלי">
-              <h2>התוצאות שלי</h2>
+            <section className="my-scores" aria-label="התוצאות היומיות שלי">
+              <h2>התוצאות היומיות שלי</h2>
               {scoresLoading ? <p className="status">טוען תוצאות…</p> : null}
               {scoresError ? <p className="form-error" role="alert">{scoresError}</p> : null}
               {!scoresLoading && !scoresError && myScores.length === 0 ? (

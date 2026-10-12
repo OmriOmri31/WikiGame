@@ -5,6 +5,16 @@ export function timestampMillis(stamp) {
   return 0;
 }
 
+export function formatScoreDate(stamp) {
+  const millis = timestampMillis(stamp);
+  if (!millis) return '—';
+  return new Intl.DateTimeFormat('he-IL', {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+  }).format(new Date(millis));
+}
+
 function pad(value, size) {
   return String(value).padStart(size, '0');
 }
