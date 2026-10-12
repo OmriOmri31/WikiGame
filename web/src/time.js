@@ -9,19 +9,24 @@ function pad(value, size) {
   return String(value).padStart(size, '0');
 }
 
-/** Hours are omitted while they are 0. Milliseconds always use three digits. */
-export function formatDuration(value) {
+/**
+ * Hours are omitted while they are 0.
+ * Milliseconds use three digits when shown; the live timer hides them.
+ */
+export function formatDuration(value, { milliseconds = true } = {}) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return '—';
 
   const totalMs = Math.round(number * 1000);
-  const milliseconds = totalMs % 1000;
-  const totalSeconds = Math.floor(totalMs / 1000);
+  const remainderMs = totalMs % 1000;
+  const totalSeconds = milliseconds ? Math.floor(totalMs / 1000) : Math.floor(number);
   const seconds = totalSeconds % 60;
   const totalMinutes = Math.floor(totalSeconds / 60);
   const minutes = totalMinutes % 60;
   const hours = Math.floor(totalMinutes / 60);
-  const clock = `${pad(minutes, 2)}:${pad(seconds, 2)}.${pad(milliseconds, 3)}`;
+  const clock = milliseconds
+    ? `${pad(minutes, 2)}:${pad(seconds, 2)}.${pad(remainderMs, 3)}`
+    : `${pad(minutes, 2)}:${pad(seconds, 2)}`;
   if (hours > 0) return `${pad(hours, 2)}:${clock}`;
   return clock;
 }

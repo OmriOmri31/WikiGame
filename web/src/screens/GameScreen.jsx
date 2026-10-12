@@ -285,7 +285,7 @@ export default function GameScreen({ user, onFinish }) {
 
   const stats = (
     <div className="info-row">
-      <span className="stat">זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime)}</bdi></span>
+      <span className="stat">זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime, { milliseconds: false })}</bdi></span>
       <span className="stat">מספר הדפים: <bdi>{pages}</bdi></span>
     </div>
   );
@@ -373,7 +373,7 @@ export default function GameScreen({ user, onFinish }) {
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
             <h2>כל הכבוד!</h2>
-            <p>סיימת את המשחק ב-<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0)}</bdi>.</p>
+            <p>סיימת את המשחק ב-<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
             <p>מספר הדפים שביקרת: <bdi>{pages}</bdi></p>
             {saveError ? (
               <>
