@@ -9,6 +9,7 @@ import GameTools, { FindBar } from '../GameTools';
 import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
 import Sheet from '../Sheet';
 import { formatDuration } from '../time';
+import { findShortestPath } from '../wikiBot';
 import {
   fetchArticle,
   normalizeTitle,
@@ -46,6 +47,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const [secretOpen, setSecretOpen] = useState(false);
   const [secretInput, setSecretInput] = useState('');
   const [congratsOpen, setCongratsOpen] = useState(false);
+  const [seekingFastest, setSeekingFastest] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [backUses, setBackUses] = useState(3);
   const [searchTitle, setSearchTitle] = useState(null);
@@ -372,6 +374,35 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     };
   }, [fatal]);
 
+  async function shortestFreePath() {
+    setSeekingFastest(true);
+    try {
+      const found = await findShortestPath(startTitleRef.current, goalTitleRef.current);
+      return found?.path || [];
+    } catch (error) {
+      console.error(error);
+      return [];
+    }
+  }
+
+  async function storeScore(score) {
+    if (!user?.uid) return saveLocalScore(score);
+    const ref = await addDoc(collection(db, 'scores'), {
+      uid: user.uid,
+      name: accountName(user),
+      pagesVisited: score.pagesVisited,
+      timeTaken: score.timeTaken,
+      timestamp: Timestamp.now(),
+      mode: score.mode,
+      startTitle: score.startTitle,
+      goalTitle: score.goalTitle,
+      path: score.path,
+      ...(Array.isArray(score.fastestPath) ? { fastestPath: score.fastestPath } : {}),
+      ...(score.gaveUp ? { gaveUp: true } : {}),
+    });
+    return { id: ref.id };
+  }
+
   async function completeGame(pageCount) {
     if (finishedRef.current) return;
     finishedRef.current = true;
@@ -379,12 +410,16 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     searchOpenRef.current = false;
     setSearchOpen(false);
     exitFullscreen();
-    const timeTaken = Number(((Date.now() - startRef.current) / 1000).toFixed(3));
+    const shownAt = Date.now();
+    const timeTaken = Number(((shownAt - startRef.current) / 1000).toFixed(3));
     setFinalTime(timeTaken);
     setCongratsOpen(true);
 
     const scoreMode = mode === 'free' ? 'free' : 'daily';
+    const fastest = scoreMode === 'free' ? await shortestFreePath() : null;
+    if (scoreMode === 'free') setSeekingFastest(false);
     const finish = (id) => {
+      const delay = Math.max(0, 2000 - (Date.now() - shownAt));
       window.setTimeout(() => {
         onFinishRef.current({
           id,
@@ -392,41 +427,21 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
           pagesVisited: pageCount,
           mode: scoreMode,
         });
-      }, 2000);
+      }, delay);
     };
 
-    if (!user?.uid) {
-      try {
-        const saved = saveLocalScore({
-          name: 'שחקן',
-          pagesVisited: pageCount,
-          timeTaken,
-          mode: scoreMode,
-          startTitle: startTitleRef.current,
-          goalTitle: goalTitleRef.current,
-          path: pathRef.current.slice(),
-        });
-        finish(saved.id);
-      } catch (error) {
-        console.error(error);
-        setSaveError(true);
-      }
-      return;
-    }
-
     try {
-      const ref = await addDoc(collection(db, 'scores'), {
-        uid: user.uid,
-        name: accountName(user),
+      const saved = await storeScore({
+        name: 'שחקן',
         pagesVisited: pageCount,
         timeTaken,
-        timestamp: Timestamp.now(),
         mode: scoreMode,
         startTitle: startTitleRef.current,
         goalTitle: goalTitleRef.current,
         path: pathRef.current.slice(),
+        ...(fastest ? { fastestPath: fastest } : {}),
       });
-      finish(ref.id);
+      finish(saved.id);
     } catch (error) {
       console.error(error);
       setSaveError(true);
@@ -470,13 +485,41 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     setAttempt((value) => value + 1);
   }
 
-  function giveUp() {
+  async function giveUp() {
     if (finishedRef.current) return;
     finishedRef.current = true;
     runRef.current += 1;
     loadingRef.current = false;
     exitFullscreen();
-    onExit();
+    if (mode !== 'free') {
+      onExit();
+      return;
+    }
+
+    const timeTaken = Number(((Date.now() - startRef.current) / 1000).toFixed(3));
+    const fastest = await shortestFreePath();
+    try {
+      const saved = await storeScore({
+        name: 'שחקן',
+        pagesVisited: pagesRef.current,
+        timeTaken,
+        mode: 'free',
+        gaveUp: true,
+        startTitle: startTitleRef.current,
+        goalTitle: goalTitleRef.current,
+        path: pathRef.current.slice(),
+        fastestPath: fastest,
+      });
+      onFinishRef.current({
+        id: saved.id,
+        timeTaken,
+        pagesVisited: pagesRef.current,
+        mode: 'free',
+      });
+    } catch (error) {
+      console.error(error);
+      onExit();
+    }
   }
 
   async function openArticle(title, hash = '') {
@@ -595,8 +638,10 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
 
   return (
     <main className="game">
-      {congratsOpen ? null : <GameMenu onRestart={restartGame} onExit={giveUp} />}
-      {congratsOpen ? null : (
+      {congratsOpen || seekingFastest ? null : (
+        <GameMenu onRestart={restartGame} onExit={giveUp} freePlay={mode === 'free'} />
+      )}
+      {congratsOpen || seekingFastest ? null : (
         <GameTools
           backUses={backUses}
           backDisabled={pages < 2 || backUses < 1 || loading}
@@ -705,12 +750,22 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
         </div>
       ) : null}
 
+      {seekingFastest && !congratsOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-card" role="dialog" aria-modal="true" aria-busy="true" aria-label="הדרך המהירה ביותר">
+            <h2>הדרך המהירה ביותר</h2>
+            <p className="status">מחפשים את הדרך. זה יכול לקחת כחצי דקה.</p>
+          </div>
+        </div>
+      ) : null}
+
       {congratsOpen ? (
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
             <h2>כל הכבוד!</h2>
             <p>סיימת את המשחק ב-<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
             <p>מספר הדפים שביקרת: <bdi>{pages}</bdi></p>
+            {seekingFastest ? <p className="status">מחפשים את הדרך המהירה ביותר…</p> : null}
             {saveError ? (
               <>
                 <p className="form-error">התרחשה שגיאה בשמירת הציון.</p>

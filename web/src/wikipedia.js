@@ -169,7 +169,7 @@ function israelDateParts(date) {
   return { year: value('year'), month: value('month'), day: value('day') };
 }
 
-function israelDateKey(date = new Date()) {
+export function israelDateKey(date = new Date()) {
   const { year, month, day } = israelDateParts(date);
   const pad = (part) => String(part).padStart(2, '0');
   return `${year}-${pad(month)}-${pad(day)}`;

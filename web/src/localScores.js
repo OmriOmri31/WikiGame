@@ -34,6 +34,8 @@ export function saveLocalScore(score) {
     goalTitle: score.goalTitle || '',
     path: Array.isArray(score.path) ? score.path : [],
   };
+  if (Array.isArray(score.fastestPath)) row.fastestPath = score.fastestPath;
+  if (score.gaveUp) row.gaveUp = true;
   const next = [row, ...loadLocalScores()].slice(0, MAX_SCORES);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return row;

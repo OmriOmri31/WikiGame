@@ -1103,6 +1103,13 @@ mark.page-find.is-current {
   font-weight: 600;
 }
 
+.give-up-mark {
+  margin-inline-start: 0.45rem;
+  color: var(--secondary-label);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .path-card {
   width: min(520px, 100%);
   max-height: min(78dvh, 640px);
@@ -1177,12 +1184,28 @@ mark.page-find.is-current {
   font-weight: 500;
 }
 
+.score-row.is-fastest .name {
+  white-space: normal;
+  line-height: 1.25;
+}
+
 .dots {
   margin: 14px 0;
   text-align: center;
   color: var(--secondary-label);
   letter-spacing: 0.4em;
   line-height: 1;
+}
+
+.outside-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.outside-top .dots {
+  margin: 0;
 }
 
 .outside-top .score-row {
@@ -1986,7 +2009,8 @@ body:has(.stage) { background: #e7f0fb; }
 
 .stage .free-route,
 .stage .path-sep,
-.stage .dots { color: var(--stage-muted); }
+.stage .dots,
+.stage .give-up-mark { color: var(--stage-muted); }
 
 .stage .free-route bdi,
 .stage .name { color: var(--stage-ink); }
@@ -2262,6 +2286,7 @@ body:has(.stage-home) { background: #ffffff; }
   display: flex;
   flex-direction: column;
   align-items: center;
+  margin-bottom: 22px;
 }
 
 .home-title {
@@ -2273,16 +2298,6 @@ body:has(.stage-home) { background: #ffffff; }
   display: block;
   width: 100%;
   height: auto;
-}
-
-.home-tagline {
-  margin: 2px 0 22px;
-  max-width: 22rem;
-  color: var(--home-muted);
-  font-size: 1.05rem;
-  font-weight: 500;
-  line-height: 1.45;
-  text-align: center;
 }
 
 .home-actions {

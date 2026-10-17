@@ -70,7 +70,7 @@ function FlagIcon() {
   );
 }
 
-export default function GameMenu({ onRestart, onExit }) {
+export default function GameMenu({ onRestart, onExit, freePlay = false }) {
   const menuId = useId();
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
@@ -257,7 +257,11 @@ export default function GameMenu({ onRestart, onExit }) {
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="give-up-title">לוותר על המשחק?</h2>
-            <p id="give-up-body" className="lede">ההתקדמות בסיבוב הזה לא תישמר.</p>
+            <p id="give-up-body" className="lede">
+              {freePlay
+                ? 'אחרי הוויתור תופיע הדרך המהירה ביותר בטבלה.'
+                : 'ההתקדמות בסיבוב הזה לא תישמר.'}
+            </p>
             <button className="primary" type="button" autoFocus onClick={cancelGiveUp}>
               המשך לשחק
             </button>

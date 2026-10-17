@@ -6,6 +6,8 @@ import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
 import ThemeButton from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
+import { subscribeBot } from '../botRun';
+import { isWikiBot, WIKI_BOT_NAME } from '../wikiBot';
 import { articleUrl, normalizeTitle } from '../wikipedia';
 
 // Firestore rules allow create but not delete, so probe scores stay hidden here.
@@ -14,6 +16,7 @@ const IGNORED_SCORE_IDS = new Set([
   'WBwWbEGmFysvc440EjO8',
   'mXPsH85ZrHsQGW4OfskY',
   'GocwcHCAmyGj9QUz3OBf',
+  'wiki-bot-rulecheck',
 ]);
 
 function latestForUser(rows, uid) {
@@ -30,17 +33,36 @@ function savedPath(row) {
   return row.path.map((title) => normalizeTitle(title)).filter(Boolean);
 }
 
+function fastestPath(row) {
+  if (!Array.isArray(row?.fastestPath)) return null;
+  return row.fastestPath.map((title) => normalizeTitle(title)).filter(Boolean);
+}
+
 function canReplay(row) {
   return Boolean(normalizeTitle(row?.startTitle) && normalizeTitle(row?.goalTitle));
 }
 
-function ScoreActions({ row, onShowPath, onReplay, allowReplay }) {
+function winKey(row) {
+  const start = normalizeTitle(row?.startTitle);
+  const goal = normalizeTitle(row?.goalTitle);
+  if (!start || !goal) return '';
+  return `${start}\n${goal}`;
+}
+
+function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, showPath = true, showFastest = false }) {
   const replayReady = allowReplay && canReplay(row);
   return (
     <div className="score-actions">
-      <button className="text-button compact" type="button" onClick={() => onShowPath(row)}>
-        הצג דרך
-      </button>
+      {showPath ? (
+        <button className="text-button compact" type="button" onClick={() => onShowPath(row)}>
+          הצג דרך
+        </button>
+      ) : null}
+      {showFastest ? (
+        <button className="text-button compact" type="button" onClick={() => onShowFastest(row)}>
+          {WIKI_BOT_NAME}
+        </button>
+      ) : null}
       <button
         className="text-button compact"
         type="button"
@@ -53,24 +75,30 @@ function ScoreActions({ row, onShowPath, onReplay, allowReplay }) {
   );
 }
 
-function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay }) {
+function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, showPath }) {
   return (
     <div
       id={`score-${row.id}`}
-      className={highlighted ? 'score-row is-player' : 'score-row'}
+      className={['score-row', highlighted ? 'is-player' : '', isWikiBot(row) ? 'is-fastest' : ''].filter(Boolean).join(' ')}
     >
       <div className="score-main">
         <span className={Number.isInteger(rank) && rank <= 3 ? 'num is-medal' : 'num'}>{rank ?? '—'}</span>
-        <span className="name">{row.name}</span>
+        <span className="name">{isWikiBot(row) ? WIKI_BOT_NAME : row.name}</span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
         <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
       </div>
-      <ScoreActions row={row} onShowPath={onShowPath} onReplay={onReplay} allowReplay={allowReplay} />
+      <ScoreActions
+        row={row}
+        onShowPath={onShowPath}
+        onReplay={onReplay}
+        allowReplay={allowReplay}
+        showPath={showPath}
+      />
     </div>
   );
 }
 
-function FreePlayRow({ row, highlighted, onShowPath, onReplay, allowReplay }) {
+function FreePlayRow({ row, highlighted, onShowPath, onShowFastest, onReplay, allowReplay }) {
   return (
     <div
       id={`score-${row.id}`}
@@ -85,8 +113,17 @@ function FreePlayRow({ row, highlighted, onShowPath, onReplay, allowReplay }) {
         <bdi>{row.startTitle || '—'}</bdi>
         <span className="path-sep" aria-hidden="true"> ← </span>
         <bdi>{row.goalTitle || '—'}</bdi>
+        {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
       </p>
-      <ScoreActions row={row} onShowPath={onShowPath} onReplay={onReplay} allowReplay={allowReplay} />
+      <ScoreActions
+        row={row}
+        onShowPath={onShowPath}
+        onShowFastest={onShowFastest}
+        onReplay={onReplay}
+        allowReplay={allowReplay}
+        showPath={savedPath(row).length > 0}
+        showFastest={Array.isArray(row.fastestPath)}
+      />
     </div>
   );
 }
@@ -114,10 +151,19 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deviceDaily, setDeviceDaily] = useState([]);
-  const [pathRow, setPathRow] = useState(null);
+  const [outsideBots, setOutsideBots] = useState([]);
+  const [wonKeys, setWonKeys] = useState(() => new Set());
+  const [botPhase, setBotPhase] = useState('idle');
+  const [reloadToken, setReloadToken] = useState(0);
+  const [pathView, setPathView] = useState(null);
   const pathDialogRef = useRef(null);
   const onHomeRef = useRef(onHome);
   onHomeRef.current = onHome;
+
+  useEffect(() => subscribeBot((next) => {
+    setBotPhase(next);
+    if (next === 'done') setReloadToken((value) => value + 1);
+  }), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,7 +190,11 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       if (cancelled) return;
 
       const rows = readable.filter((row) => (
-        row.mode !== 'free' && typeof row.name === 'string' && row.name.trim()
+        row.mode !== 'free'
+        && !row.gaveUp
+        && !row.lock
+        && typeof row.name === 'string'
+        && row.name.trim()
       ));
 
       rows.sort((a, b) => {
@@ -169,9 +219,24 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       }
       if (!mine) mine = latestForUser(rows, uid);
 
+      const won = new Set();
+      const addWin = (row) => {
+        if (!row || row.mode === 'free' || isWikiBot(row) || row.gaveUp || row.lock) return;
+        const key = winKey(row);
+        if (key) won.add(key);
+      };
+      if (uid) readable.forEach((row) => {
+        if (row.uid === uid) addWin(row);
+      });
+      localDaily.forEach(addWin);
+
       setScores(top);
       setFreePlays(mineFree);
       setDeviceDaily(localDaily);
+      setOutsideBots(rows.flatMap((row, index) => (
+        isWikiBot(row) && index >= 10 ? [{ row, rank: index + 1 }] : []
+      )));
+      setWonKeys(won);
       setPlayerScore(mine || null);
       setPlayerRank(mine ? rows.findIndex((row) => row.id === mine.id) + 1 : null);
       setError(remoteError);
@@ -182,7 +247,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     return () => {
       cancelled = true;
     };
-  }, [highlightId, highlightMode, user]);
+  }, [highlightId, highlightMode, reloadToken, user]);
 
   useEffect(() => {
     if (loading || !highlightId) return undefined;
@@ -191,19 +256,42 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   }, [highlightId, loading, scores, freePlays, deviceDaily]);
 
   useEffect(() => {
-    if (!pathRow) return undefined;
+    if (!pathView) return undefined;
     pathDialogRef.current?.focus();
     const onKey = (event) => {
-      if (event.key === 'Escape') setPathRow(null);
+      if (event.key === 'Escape') setPathView(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pathRow]);
+  }, [pathView]);
 
   const highlightedId = playerScore?.id;
-  const pathTitles = savedPath(pathRow);
+  const pathRow = pathView?.row || null;
+  const showingFastest = pathView?.kind === 'fastest';
+  const pathTitles = showingFastest ? (fastestPath(pathRow) || []) : savedPath(pathRow);
+  const outsideRows = [
+    ...(playerRank > 10 && playerScore ? [{ row: playerScore, rank: playerRank, highlighted: true }] : []),
+    ...outsideBots
+      .filter((item) => item.row.id !== playerScore?.id)
+      .map((item) => ({ ...item, highlighted: false })),
+  ].sort((a, b) => a.rank - b.rank);
+
+  function showDailyPath(row) {
+    const key = winKey(row);
+    if (key && wonKeys.has(key)) return true;
+    if (!key && ((user?.uid && row.uid === user.uid) || row.local)) return true;
+    return false;
+  }
   const savedOnDevice = deviceDaily.some((row) => row.id === highlightId)
     || freePlays.some((row) => row.local && row.id === highlightId);
+
+  function showPlayed(row) {
+    setPathView({ row, kind: 'played' });
+  }
+
+  function showFastest(row) {
+    setPathView({ row, kind: 'fastest' });
+  }
 
   function replay(row) {
     if (!canReplay(row)) return;
@@ -243,6 +331,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
               {!loading && !error && scores.length === 0 ? (
                 <p className="empty">עדיין אין תוצאות.</p>
               ) : null}
+              {botPhase === 'running' ? <p className="status">מחפשים את הדרך המהירה ביותר…</p> : null}
 
               {scores.length > 0 ? (
                 <div className="score-table">
@@ -258,9 +347,10 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                       row={row}
                       rank={index + 1}
                       highlighted={row.id === highlightedId}
-                      onShowPath={setPathRow}
+                      onShowPath={showPlayed}
                       onReplay={replay}
                       allowReplay
+                      showPath={showDailyPath(row)}
                     />
                   ))}
                 </div>
@@ -276,26 +366,31 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                         row={row}
                         rank={null}
                         highlighted={row.id === highlightId}
-                        onShowPath={setPathRow}
+                        onShowPath={showPlayed}
                         onReplay={replay}
                         allowReplay
+                        showPath={showDailyPath(row)}
                       />
                     ))}
                   </div>
                 </div>
               ) : null}
 
-              {playerRank > 10 && playerScore ? (
+              {outsideRows.length > 0 ? (
                 <div className="outside-top">
                   <p className="dots" aria-hidden="true">···</p>
-                  <DailyRow
-                    row={playerScore}
-                    rank={playerRank}
-                    highlighted
-                    onShowPath={setPathRow}
-                    onReplay={replay}
-                    allowReplay
-                  />
+                  {outsideRows.map((item) => (
+                    <DailyRow
+                      key={item.row.id}
+                      row={item.row}
+                      rank={item.rank}
+                      highlighted={item.highlighted}
+                      onShowPath={showPlayed}
+                      onReplay={replay}
+                      allowReplay
+                      showPath={showDailyPath(item.row)}
+                    />
+                  ))}
                 </div>
               ) : null}
             </section>
@@ -317,7 +412,8 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                       key={row.id}
                       row={row}
                       highlighted={highlightMode === 'free' && row.id === highlightId}
-                      onShowPath={setPathRow}
+                      onShowPath={showPlayed}
+                      onShowFastest={showFastest}
                       onReplay={replay}
                       allowReplay
                     />
@@ -334,24 +430,26 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         </div>
       </main>
 
-      {pathRow ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setPathRow(null)}>
+      {pathView ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPathView(null)}>
           <div
             className="modal-card path-card"
             role="dialog"
             aria-modal="true"
-            aria-label="הדרך"
+            aria-label={showingFastest ? WIKI_BOT_NAME : 'הדרך'}
             tabIndex={-1}
             ref={pathDialogRef}
             onClick={(event) => event.stopPropagation()}
           >
-            <h2>הדרך</h2>
+            <h2>{showingFastest ? WIKI_BOT_NAME : 'הדרך'}</h2>
             {pathTitles.length > 0 ? (
               <PathLine titles={pathTitles} />
             ) : (
-              <p className="lede">הדרך לא נשמרה במשחק הזה.</p>
+              <p className="lede">
+                {showingFastest ? 'לא נמצאה דרך עד 25 דפים.' : 'הדרך לא נשמרה במשחק הזה.'}
+              </p>
             )}
-            <button className="primary" type="button" onClick={() => setPathRow(null)}>סגור</button>
+            <button className="primary" type="button" onClick={() => setPathView(null)}>סגור</button>
           </div>
         </div>
       ) : null}

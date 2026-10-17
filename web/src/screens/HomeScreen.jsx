@@ -272,21 +272,20 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
               height={1144}
             />
           </h1>
-          <p className="home-tagline">מערך הפתיחה אל המטרה, קישור אחר קישור.</p>
         </header>
         <section className="home-actions" aria-label="התחלה">
           {user ? <h2 className="greeting">שלום, {greeting}</h2> : null}
           <button className="primary" type="button" onClick={startGame}>התחל</button>
           <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
           <button className="text-button home-board-link" type="button" onClick={onLeaderboard}>
-            טבלת השיאים
+            טבלת שיאים יומית
           </button>
           <div className="home-more">
             {user ? (
               <>
                 {error ? <p className="form-error" role="alert">{error}</p> : null}
-                <section className="my-scores" aria-label="התוצאות היומיות שלי">
-                  <h3>התוצאות שלי</h3>
+                <section className="my-scores" aria-label="התוצאה היומית שלי">
+                  <h3>התוצאה היומית שלי</h3>
                   {scoresLoading ? <p className="status">טוען תוצאות…</p> : null}
                   {scoresError ? <p className="form-error" role="alert">{scoresError}</p> : null}
                   {!scoresLoading && !scoresError && myScores.length === 0 ? (
@@ -311,8 +310,8 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
             ) : (
               <>
                 {myScores.length > 0 ? (
-                  <section className="my-scores" aria-label="התוצאות היומיות שלי">
-                    <h3>התוצאות שלי</h3>
+                  <section className="my-scores" aria-label="התוצאה היומית שלי">
+                    <h3>התוצאה היומית שלי</h3>
                     <div className="score-list">
                       {myScores.map((row) => (
                         <div className="my-score" key={row.id}>

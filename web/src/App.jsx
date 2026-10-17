@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { startDailyBot } from './botRun';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
 import { exitFullscreen } from './fullscreen';
@@ -32,6 +33,8 @@ export default function App() {
   useEffect(() => {
     document.title = 'משחק הוויקיפדיה';
   }, [screen]);
+
+  useEffect(() => startDailyBot(), []);
 
   useEffect(() => {
     if (screen !== 'game') exitFullscreen();
