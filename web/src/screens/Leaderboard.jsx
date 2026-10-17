@@ -78,9 +78,9 @@ function FreePlayRow({ row, highlighted, onShowPath, onReplay, allowReplay }) {
         <span className="num" dir="ltr">{row.pagesVisited}</span>
         <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
       </div>
-      <p className="free-route" dir="ltr">
+      <p className="free-route" dir="rtl">
         <bdi>{row.startTitle || '—'}</bdi>
-        <span className="path-sep"> → </span>
+        <span className="path-sep" aria-hidden="true"> ← </span>
         <bdi>{row.goalTitle || '—'}</bdi>
       </p>
       <ScoreActions row={row} onShowPath={onShowPath} onReplay={onReplay} allowReplay={allowReplay} />
@@ -90,10 +90,10 @@ function FreePlayRow({ row, highlighted, onShowPath, onReplay, allowReplay }) {
 
 function PathLine({ titles }) {
   return (
-    <p className="path-line" dir="ltr">
+    <p className="path-line" dir="rtl">
       {titles.map((title, index) => (
         <span className="path-step" key={`${title}-${index}`}>
-          {index > 0 ? <span className="path-sep" aria-hidden="true">→</span> : null}
+          {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
           <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
             <bdi>{title}</bdi>
           </a>

@@ -4,6 +4,8 @@ import { accountName } from '../account';
 import { db } from '../firebase';
 import { exitFullscreen } from '../fullscreen';
 import GameMenu from '../GameMenu';
+import GameTools, { FindBar } from '../GameTools';
+import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
 import Sheet from '../Sheet';
 import { formatDuration } from '../time';
 import {
@@ -44,6 +46,13 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const [secretInput, setSecretInput] = useState('');
   const [congratsOpen, setCongratsOpen] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [backUses, setBackUses] = useState(3);
+  const [searchTitle, setSearchTitle] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findIndex, setFindIndex] = useState(0);
+  const [findCount, setFindCount] = useState(0);
+  const [findCapped, setFindCapped] = useState(false);
 
   const pagesRef = useRef(1);
   const startRef = useRef(0);
@@ -59,8 +68,16 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const runRef = useRef(0);
   const lockedPairRef = useRef(null);
   const tapsRef = useRef({ count: 0, last: 0 });
+  const articleRef = useRef(null);
+  const cacheRef = useRef(new Map());
+  const backUsesRef = useRef(3);
+  const searchTitleRef = useRef(null);
+  const searchOpenRef = useRef(false);
+  const rangesRef = useRef([]);
+  const findIndexRef = useRef(0);
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
+  searchOpenRef.current = searchOpen;
   const fixedStart = pair?.startTitle || '';
   const fixedGoal = pair?.goalTitle || '';
 
@@ -68,6 +85,101 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     setToast(message);
     window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 3200);
+  }
+
+  function closeSearchIfOtherPage(title) {
+    if (!searchTitleRef.current || sameTitle(searchTitleRef.current, title)) return;
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+  }
+
+  function openSearch() {
+    if (finishedRef.current) return;
+    const here = currentTitleRef.current;
+    if (!here) return;
+    if (searchTitleRef.current && !sameTitle(searchTitleRef.current, here)) return;
+    if (!searchTitleRef.current) {
+      searchTitleRef.current = here;
+      setSearchTitle(here);
+    }
+    searchOpenRef.current = true;
+    setSearchOpen(true);
+    setGoalOpen(false);
+  }
+
+  function toggleSearch() {
+    if (searchTitleRef.current && !sameTitle(searchTitleRef.current, currentTitleRef.current)) return;
+    if (searchOpenRef.current) {
+      searchOpenRef.current = false;
+      setSearchOpen(false);
+      return;
+    }
+    openSearch();
+  }
+
+  function closeSearch() {
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+    document.querySelector('.search-tool')?.focus({ preventScroll: true });
+  }
+
+  function stepFind(delta) {
+    const ranges = rangesRef.current;
+    if (!ranges.length) return;
+    const next = (findIndexRef.current + delta + ranges.length) % ranges.length;
+    findIndexRef.current = next;
+    setFindIndex(next);
+    paintPageFind(ranges, next);
+    scrollMatchIntoView(ranges[next], scrollRef.current);
+  }
+
+  function applyBack(entry) {
+    const count = Math.max(1, pagesRef.current - 1);
+    pagesRef.current = count;
+    setPages(count);
+    backUsesRef.current = Math.max(0, backUsesRef.current - 1);
+    setBackUses(backUsesRef.current);
+    pathRef.current = pathRef.current.slice(0, -1);
+    const last = pathRef.current.length - 1;
+    if (last >= 0 && !sameTitle(pathRef.current[last], entry.article.title)) {
+      pathRef.current[last] = entry.article.title;
+    }
+    currentTitleRef.current = entry.article.title;
+    pendingHashRef.current = '';
+    setArticle(entry.article);
+    setArticleHtml(entry.html);
+    closeSearchIfOtherPage(entry.article.title);
+  }
+
+  async function goBack() {
+    if (finishedRef.current || loadingRef.current) return;
+    if (backUsesRef.current <= 0 || pathRef.current.length < 2 || pagesRef.current < 2) return;
+
+    const previousTitle = pathRef.current[pathRef.current.length - 2];
+    const cached = cacheRef.current.get(previousTitle);
+    if (cached) {
+      applyBack(cached);
+      return;
+    }
+
+    const run = runRef.current;
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      const next = await fetchArticle(previousTitle);
+      const html = await prepareArticleHtml(next.html);
+      if (finishedRef.current || run !== runRef.current) return;
+      cacheRef.current.set(next.title, { article: next, html });
+      applyBack({ article: next, html });
+    } catch (error) {
+      console.error(error);
+      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');
+    } finally {
+      if (run === runRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
   }
 
   useEffect(() => {
@@ -129,6 +241,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
         startTitleRef.current = startArticle.title;
         pathRef.current = [startArticle.title];
         pagesRef.current = 1;
+        cacheRef.current = new Map([[startArticle.title, { article: startArticle, html: startHtml }]]);
         setPages(1);
         setStartTitle(startArticle.title);
         setGoalTitle(targetArticle.title);
@@ -182,6 +295,70 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   }, [article]);
 
   useEffect(() => {
+    const root = articleRef.current;
+    clearPageFind(root);
+    rangesRef.current = [];
+    if (!searchOpen || !findQuery.trim() || !root) {
+      findIndexRef.current = 0;
+      setFindIndex(0);
+      setFindCount(0);
+      setFindCapped(false);
+      return undefined;
+    }
+    const { ranges, capped } = collectPageMatches(root, findQuery);
+    rangesRef.current = ranges;
+    findIndexRef.current = 0;
+    setFindIndex(0);
+    setFindCount(ranges.length);
+    setFindCapped(capped);
+    paintPageFind(ranges, 0);
+    if (ranges[0]) scrollMatchIntoView(ranges[0], scrollRef.current);
+    return () => clearPageFind(root);
+  }, [searchOpen, findQuery, articleHtml]);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (finishedRef.current) return;
+      if (event.key === 'Escape') {
+        if (!searchOpenRef.current) return;
+        event.preventDefault();
+        searchOpenRef.current = false;
+        setSearchOpen(false);
+        document.querySelector('.search-tool')?.focus({ preventScroll: true });
+        return;
+      }
+      if (event.key === 'F3') {
+        if (!searchOpenRef.current) return;
+        event.preventDefault();
+        stepFind(event.shiftKey ? -1 : 1);
+        return;
+      }
+      const findShortcut = (event.ctrlKey || event.metaKey)
+        && !event.altKey
+        && !event.shiftKey
+        && event.code === 'KeyF';
+      if (!findShortcut) return;
+      event.preventDefault();
+      if (event.repeat || !currentTitleRef.current) return;
+      const locked = searchTitleRef.current
+        && !sameTitle(searchTitleRef.current, currentTitleRef.current);
+      if (locked) {
+        showToast('החיפוש זמין רק בדף אחד במשחק.');
+        return;
+      }
+      if (searchOpenRef.current) {
+        const input = document.getElementById('page-find-input');
+        input?.focus();
+        input?.select();
+        return;
+      }
+      openSearch();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
     const onLeave = (event) => {
       if (finishedRef.current || fatal) return;
       event.preventDefault();
@@ -198,6 +375,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     if (finishedRef.current) return;
     finishedRef.current = true;
     setRunning(false);
+    searchOpenRef.current = false;
+    setSearchOpen(false);
     exitFullscreen();
     const timeTaken = Number(((Date.now() - startRef.current) / 1000).toFixed(3));
     setFinalTime(timeTaken);
@@ -254,6 +433,19 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     setCongratsOpen(false);
     setSaveError(false);
     setToast('');
+    backUsesRef.current = 3;
+    setBackUses(3);
+    searchTitleRef.current = null;
+    setSearchTitle(null);
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+    setFindQuery('');
+    findIndexRef.current = 0;
+    setFindIndex(0);
+    setFindCount(0);
+    setFindCapped(false);
+    rangesRef.current = [];
+    clearPageFind(articleRef.current);
     setLoading(true);
     scrollRef.current?.scrollTo(0, 0);
     setAttempt((value) => value + 1);
@@ -291,9 +483,11 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
       setPages(count);
       currentTitleRef.current = next.title;
       pathRef.current = [...pathRef.current, next.title];
+      cacheRef.current.set(next.title, { article: next, html });
       pendingHashRef.current = hash;
       setArticle(next);
       setArticleHtml(html);
+      closeSearchIfOtherPage(next.title);
 
       if (sameTitle(next.title, goalTitleRef.current)) {
         await completeGame(count);
@@ -383,6 +577,17 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   return (
     <main className="game">
       {congratsOpen ? null : <GameMenu onRestart={restartGame} onExit={giveUp} />}
+      {congratsOpen ? null : (
+        <GameTools
+          backUses={backUses}
+          backDisabled={pages < 2 || backUses < 1 || loading}
+          onFirstPage={pages < 2}
+          onBack={goBack}
+          searchDisabled={Boolean(searchTitle && !sameTitle(searchTitle, article.title))}
+          searchOpen={searchOpen}
+          onToggleSearch={toggleSearch}
+        />
+      )}
       <div className="article-scroll" ref={scrollRef}>
         <header className="game-header" onClick={registerHeaderTap}>
           <p className="route-title">{startTitle}</p>
@@ -390,15 +595,36 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
           <button
             className="target-link"
             type="button"
-            onClick={() => setGoalOpen(true)}
+            onClick={() => {
+              if (searchOpenRef.current) {
+                searchOpenRef.current = false;
+                setSearchOpen(false);
+              }
+              setGoalOpen(true);
+            }}
           >
             {goalTitle}
           </button>
           {stats}
+          {searchOpen ? (
+            <FindBar
+              query={findQuery}
+              onQueryChange={setFindQuery}
+              matchIndex={findIndex}
+              matchCount={findCount}
+              matchCapped={findCapped}
+              onNext={() => stepFind(1)}
+              onPrev={() => stepFind(-1)}
+              onCloseSearch={closeSearch}
+            />
+          ) : null}
           {loading ? <div className="loading-bar" role="progressbar" aria-label="טוען ערך" /> : null}
         </header>
 
-        <article className={`article-inner mw-parser-output${loading ? ' is-loading' : ''}`}>
+        <article
+          className={`article-inner mw-parser-output${loading ? ' is-loading' : ''}`}
+          ref={articleRef}
+        >
           <h1>{article.title}</h1>
           <div
             className="article-body"
