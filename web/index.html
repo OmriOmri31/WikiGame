@@ -8,6 +8,18 @@
       content="משחק ויקיפדיה: עברו מערך הפתיחה לערך המטרה דרך קישורים בלבד."
     />
     <title>משחק הוויקיפדיה</title>
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('wiki-theme');
+          var theme = saved === 'dark' || saved === 'light'
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (error) {}
+      })();
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

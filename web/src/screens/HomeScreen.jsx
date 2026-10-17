@@ -13,29 +13,19 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { accountName, authErrorMessage } from '../account';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
+import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
+import { useTheme } from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
-
-const STEPS = [
-  {
-    id: 'start',
-    title: 'ערך פתיחה',
-    body: 'כל יום מתחילים בערך פופולרי אחר.',
-  },
-  {
-    id: 'links',
-    title: 'רק קישורים',
-    body: 'מגיעים לערך המטרה רק דרך קישורים בתוך ויקיפדיה. בלי חיפוש ובלי קישורים החוצה.',
-  },
-  {
-    id: 'finish',
-    title: 'ניצחון',
-    body: 'פחות צעדים מנצח, ובשוויון — הזמן הקצר יותר.',
-  },
-];
 
 function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function dailyScores(rows) {
+  return rows
+    .filter((row) => row.mode !== 'free')
+    .sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
 }
 
 async function loadPersonalScores(uid) {
@@ -51,7 +41,9 @@ async function loadPersonalScores(uid) {
 }
 
 export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard }) {
+  const theme = useTheme();
   const [mode, setMode] = useState('sign-in');
+  const [mailOpen, setMailOpen] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -63,15 +55,15 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
-  const [step, setStep] = useState('links');
 
   useEffect(() => {
     if (redirectError) setError(redirectError);
   }, [redirectError]);
 
   useEffect(() => {
+    const localDaily = dailyScores(loadLocalScores());
     if (!user) {
-      setMyScores([]);
+      setMyScores(localDaily);
       setScoresError('');
       setScoresLoading(false);
       return undefined;
@@ -83,9 +75,14 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     loadPersonalScores(user.uid)
       .then((rows) => {
         if (cancelled) return;
-        const dailyRows = rows.filter((row) => row.mode !== 'free');
-        dailyRows.sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
-        setMyScores(dailyRows);
+        const seen = new Set();
+        const merged = [...dailyScores(rows), ...localDaily].filter((row) => {
+          if (seen.has(row.id)) return false;
+          seen.add(row.id);
+          return true;
+        });
+        merged.sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
+        setMyScores(merged);
       })
       .catch((loadError) => {
         console.error(loadError);
@@ -104,6 +101,16 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     setMode(next);
     setError('');
     setNotice('');
+  }
+
+  function openMail() {
+    setMailOpen(true);
+    switchMode('sign-in');
+  }
+
+  function closeMail() {
+    setMailOpen(false);
+    switchMode('sign-in');
   }
 
   function startGame() {
@@ -250,52 +257,36 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     || (user?.uid === namedUid ? overrideName : '')
     || accountName(user);
 
+  const logoSrc = theme === 'dark' ? '/wikiwiki-logo-dark.png' : '/wikiwiki-logo.png';
+
   return (
     <Stage className="stage-home">
-      <header className="stage-bar">
-        <p className="wordmark">משחק <em>הוויקיפדיה</em></p>
-        <button className="pill" type="button" onClick={onLeaderboard}>
-          טבלת השיאים
-        </button>
-      </header>
-
-      <main className="home-grid">
-        <section className="story rise">
-          <p className="kicker">משחק יומי</p>
-          <h1>מגיעים לכל ערך, רק דרך קישורים.</h1>
-          <p className="lede">
-            כל יום מתחילים בערך פופולרי אחר, ומגיעים לערך המטרה בלי חיפוש ובלי לצאת מוויקיפדיה.
-          </p>
-          <div className="proof">
-            {STEPS.map((item, index) => (
-              <button
-                key={item.id}
-                className={step === item.id ? 'proof-step is-on' : 'proof-step'}
-                type="button"
-                aria-pressed={step === item.id}
-                onClick={() => setStep(item.id)}
-              >
-                <span className="proof-index">{String(index + 1).padStart(2, '0')}</span>
-                <strong>{item.title}</strong>
-                <span>{item.body}</span>
-              </button>
-            ))}
-          </div>
-          <p className="aside">במשחק החופשי כל סיבוב מקבל זוג ערכים אחר, בלי הגבלה.</p>
-        </section>
-
-        <section className="panel glass rise rise-late" aria-label={user ? 'התחלה' : 'חשבון'}>
-          <div className="panel-scroll">
+      <main className="home-page">
+        <header className="home-hero">
+          <h1 className="home-title">
+            <img
+              className="home-logo rise"
+              src={logoSrc}
+              alt="WikiWiki"
+              width={1400}
+              height={1144}
+            />
+          </h1>
+          <p className="home-tagline">מערך הפתיחה אל המטרה, קישור אחר קישור.</p>
+        </header>
+        <section className="home-actions" aria-label="התחלה">
+          {user ? <h2 className="greeting">שלום, {greeting}</h2> : null}
+          <button className="primary" type="button" onClick={startGame}>התחל</button>
+          <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
+          <button className="text-button home-board-link" type="button" onClick={onLeaderboard}>
+            טבלת השיאים
+          </button>
+          <div className="home-more">
             {user ? (
               <>
-                <p className="kicker">החשבון</p>
-                <h2 className="greeting">שלום, {greeting}</h2>
-                <button className="primary" type="button" onClick={startGame}>התחל משחק יומי</button>
-                <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
-                <p className="hint">כל סיבוב מקבל זוג ערכים אחר, בלי הגבלה.</p>
                 {error ? <p className="form-error" role="alert">{error}</p> : null}
                 <section className="my-scores" aria-label="התוצאות היומיות שלי">
-                  <h3>התוצאות היומיות שלי</h3>
+                  <h3>התוצאות שלי</h3>
                   {scoresLoading ? <p className="status">טוען תוצאות…</p> : null}
                   {scoresError ? <p className="form-error" role="alert">{scoresError}</p> : null}
                   {!scoresLoading && !scoresError && myScores.length === 0 ? (
@@ -319,123 +310,148 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
               </>
             ) : (
               <>
-                {mode === 'reset' ? (
-                  <>
-                    <p className="kicker">חשבון</p>
-                    <h2>איפוס סיסמה</h2>
-                    <form onSubmit={submitReset} noValidate>
-                      <label htmlFor="reset-email">אימייל</label>
-                      <input
-                        id="reset-email"
-                        type="email"
-                        dir="ltr"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        autoComplete="username"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        disabled={busy}
-                      />
-                      {error ? <p className="form-error" role="alert">{error}</p> : null}
-                      {notice ? <p className="form-note">{notice}</p> : null}
-                      <button className="primary" type="submit" disabled={busy}>
-                        {busy ? 'שולח…' : 'שליחת קישור לאיפוס'}
-                      </button>
-                    </form>
-                    <div className="form-links">
-                      <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
-                        חזרה להתחברות
-                      </button>
+                {myScores.length > 0 ? (
+                  <section className="my-scores" aria-label="התוצאות היומיות שלי">
+                    <h3>התוצאות שלי</h3>
+                    <div className="score-list">
+                      {myScores.map((row) => (
+                        <div className="my-score" key={row.id}>
+                          <span>{formatScoreDate(row.timestamp)}</span>
+                          <span><bdi dir="ltr">{row.pagesVisited}</bdi> צעדים</span>
+                          <bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi>
+                        </div>
+                      ))}
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <div className={mode === 'sign-up' ? 'segment is-sign-up' : 'segment'} role="tablist" aria-label="סוג כניסה">
-                      <span className="segment-thumb" aria-hidden="true" />
-                      <button
-                        id="tab-sign-in"
-                        type="button"
-                        role="tab"
-                        aria-selected={mode === 'sign-in'}
-                        aria-controls="account-panel"
-                        onClick={() => switchMode('sign-in')}
-                      >
-                        התחברות
-                      </button>
-                      <button
-                        id="tab-sign-up"
-                        type="button"
-                        role="tab"
-                        aria-selected={mode === 'sign-up'}
-                        aria-controls="account-panel"
-                        onClick={() => switchMode('sign-up')}
-                      >
-                        חשבון חדש
-                      </button>
-                    </div>
-                    <form
-                      id="account-panel"
-                      role="tabpanel"
-                      aria-labelledby={mode === 'sign-up' ? 'tab-sign-up' : 'tab-sign-in'}
-                      onSubmit={mode === 'sign-up' ? submitSignUp : submitSignIn}
-                      noValidate
-                    >
-                      {mode === 'sign-up' ? (
-                        <>
-                          <label htmlFor="display-name">שם לתצוגה</label>
-                          <input
-                            id="display-name"
-                            value={displayName}
-                            onChange={(event) => setDisplayName(event.target.value)}
-                            autoComplete="nickname"
-                            maxLength={40}
-                            disabled={busy}
-                          />
-                        </>
-                      ) : null}
-                      <label htmlFor="account-email">אימייל</label>
-                      <input
-                        id="account-email"
-                        type="email"
-                        dir="ltr"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        autoComplete="username"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        disabled={busy}
-                      />
-                      <label htmlFor="account-password">סיסמה</label>
-                      <input
-                        id="account-password"
-                        type="password"
-                        dir="ltr"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-                        disabled={busy}
-                      />
-                      {error ? <p className="form-error" role="alert">{error}</p> : null}
-                      <button className="primary" type="submit" disabled={busy}>
-                        {busy ? 'רגע…' : (mode === 'sign-up' ? 'יצירת חשבון' : 'התחברות')}
-                      </button>
-                    </form>
-                    <button className="secondary google" type="button" onClick={continueWithGoogle} disabled={busy}>
-                      <span className="google-mark" aria-hidden="true">G</span>
-                      התחברות עם Google
-                    </button>
-                    <div className="form-links">
-                      {mode === 'sign-in' ? (
-                        <button className="text-button" type="button" onClick={() => switchMode('reset')}>
-                          שכחתי סיסמה
+                  </section>
+                ) : null}
+                {mailOpen ? (
+                  mode === 'reset' ? (
+                    <div className="mail-form">
+                      <h2>איפוס סיסמה</h2>
+                      <form onSubmit={submitReset} noValidate>
+                        <label htmlFor="reset-email">אימייל</label>
+                        <input
+                          id="reset-email"
+                          type="email"
+                          dir="ltr"
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          autoComplete="username"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          disabled={busy}
+                        />
+                        {error ? <p className="form-error" role="alert">{error}</p> : null}
+                        {notice ? <p className="form-note">{notice}</p> : null}
+                        <button className="primary" type="submit" disabled={busy}>
+                          {busy ? 'שולח…' : 'שליחת קישור לאיפוס'}
                         </button>
-                      ) : (
+                      </form>
+                      <div className="form-links">
                         <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
-                          כבר יש לי חשבון
+                          חזרה להתחברות
                         </button>
-                      )}
+                      </div>
                     </div>
-                  </>
+                  ) : (
+                    <div className="mail-form">
+                      <div className={mode === 'sign-up' ? 'segment is-sign-up' : 'segment'} role="tablist" aria-label="סוג כניסה">
+                        <span className="segment-thumb" aria-hidden="true" />
+                        <button
+                          id="tab-sign-in"
+                          type="button"
+                          role="tab"
+                          aria-selected={mode === 'sign-in'}
+                          aria-controls="account-panel"
+                          onClick={() => switchMode('sign-in')}
+                        >
+                          התחברות
+                        </button>
+                        <button
+                          id="tab-sign-up"
+                          type="button"
+                          role="tab"
+                          aria-selected={mode === 'sign-up'}
+                          aria-controls="account-panel"
+                          onClick={() => switchMode('sign-up')}
+                        >
+                          חשבון חדש
+                        </button>
+                      </div>
+                      <form
+                        id="account-panel"
+                        role="tabpanel"
+                        aria-labelledby={mode === 'sign-up' ? 'tab-sign-up' : 'tab-sign-in'}
+                        onSubmit={mode === 'sign-up' ? submitSignUp : submitSignIn}
+                        noValidate
+                      >
+                        {mode === 'sign-up' ? (
+                          <>
+                            <label htmlFor="display-name">שם לתצוגה</label>
+                            <input
+                              id="display-name"
+                              value={displayName}
+                              onChange={(event) => setDisplayName(event.target.value)}
+                              autoComplete="nickname"
+                              maxLength={40}
+                              disabled={busy}
+                            />
+                          </>
+                        ) : null}
+                        <label htmlFor="account-email">אימייל</label>
+                        <input
+                          id="account-email"
+                          type="email"
+                          dir="ltr"
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          autoComplete="username"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          disabled={busy}
+                        />
+                        <label htmlFor="account-password">סיסמה</label>
+                        <input
+                          id="account-password"
+                          type="password"
+                          dir="ltr"
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
+                          disabled={busy}
+                        />
+                        {error ? <p className="form-error" role="alert">{error}</p> : null}
+                        <button className="primary" type="submit" disabled={busy}>
+                          {busy ? 'רגע…' : (mode === 'sign-up' ? 'יצירת חשבון' : 'התחברות')}
+                        </button>
+                      </form>
+                      <div className="form-links">
+                        {mode === 'sign-in' ? (
+                          <button className="text-button" type="button" onClick={() => switchMode('reset')}>
+                            שכחתי סיסמה
+                          </button>
+                        ) : (
+                          <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
+                            כבר יש לי חשבון
+                          </button>
+                        )}
+                        <button className="text-button" type="button" onClick={closeMail}>
+                          חזרה
+                        </button>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="account-actions">
+                    <button className="secondary google auth-choice" type="button" onClick={continueWithGoogle} disabled={busy}>
+                      <span className="google-mark" aria-hidden="true">G</span>
+                      התחברות או הרשמה עם Google
+                    </button>
+                    <button className="secondary auth-choice" type="button" onClick={openMail} disabled={busy}>
+                      התחברות או הרשמה עם אימייל
+                    </button>
+                    {error ? <p className="form-error" role="alert">{error}</p> : null}
+                  </div>
                 )}
               </>
             )}

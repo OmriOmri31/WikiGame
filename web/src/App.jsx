@@ -19,7 +19,6 @@ export default function App() {
   const showHome = useCallback(() => setScreen('home'), []);
 
   function beginGame(next) {
-    if (!user) return;
     const nextPair = next.pair?.startTitle && next.pair?.goalTitle ? next.pair : null;
     setResult(null);
     setMatch({
@@ -37,10 +36,6 @@ export default function App() {
   useEffect(() => {
     if (screen !== 'game') exitFullscreen();
   }, [screen]);
-
-  useEffect(() => {
-    if (screen === 'game' && authReady && !user) setScreen('home');
-  }, [screen, authReady, user]);
 
   useEffect(() => {
     let active = true;
@@ -62,7 +57,7 @@ export default function App() {
     return <SplashScreen onDone={showHome} />;
   }
 
-  if (screen === 'game' && user) {
+  if (screen === 'game') {
     return (
       <GameScreen
         key={match.id}
@@ -78,16 +73,6 @@ export default function App() {
           setScreen('home');
         }}
       />
-    );
-  }
-
-  if (screen === 'game' && !user) {
-    return (
-      <Stage>
-        <main className="stage-status">
-          <p className="status">טוען…</p>
-        </main>
-      </Stage>
     );
   }
 

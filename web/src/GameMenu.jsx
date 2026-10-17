@@ -1,5 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { spring } from './spring';
+import { SunIcon, themeLabel, useTheme } from './ThemeButton';
+import { toggleTheme } from './theme';
 
 const OPEN_SCALE = 1;
 const CLOSED_SCALE = 0.86;
@@ -78,6 +80,7 @@ export default function GameMenu({ onRestart, onExit }) {
   const [mounted, setMounted] = useState(false);
   const [giveUpOpen, setGiveUpOpen] = useState(false);
   const reduced = prefersReducedMotion();
+  const theme = useTheme();
 
   if (open && !mounted) setMounted(true);
 
@@ -227,6 +230,10 @@ export default function GameMenu({ onRestart, onExit }) {
             ref={panelRef}
             onKeyDown={onPanelKeyDown}
           >
+            <button className="game-menu-item" type="button" role="menuitem" onClick={toggleTheme}>
+              <span>{themeLabel(theme)}</span>
+              <SunIcon />
+            </button>
             <button className="game-menu-item" type="button" role="menuitem" onClick={chooseRestart}>
               <span>התחלה מחדש</span>
               <RestartIcon />

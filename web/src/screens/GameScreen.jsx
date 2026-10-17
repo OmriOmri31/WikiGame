@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
 import { db } from '../firebase';
+import { saveLocalScore } from '../localScores';
 import { exitFullscreen } from '../fullscreen';
 import GameMenu from '../GameMenu';
 import GameTools, { FindBar } from '../GameTools';
@@ -382,12 +383,37 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     setFinalTime(timeTaken);
     setCongratsOpen(true);
 
+    const scoreMode = mode === 'free' ? 'free' : 'daily';
+    const finish = (id) => {
+      window.setTimeout(() => {
+        onFinishRef.current({
+          id,
+          timeTaken,
+          pagesVisited: pageCount,
+          mode: scoreMode,
+        });
+      }, 2000);
+    };
+
     if (!user?.uid) {
-      setSaveError(true);
+      try {
+        const saved = saveLocalScore({
+          name: 'שחקן',
+          pagesVisited: pageCount,
+          timeTaken,
+          mode: scoreMode,
+          startTitle: startTitleRef.current,
+          goalTitle: goalTitleRef.current,
+          path: pathRef.current.slice(),
+        });
+        finish(saved.id);
+      } catch (error) {
+        console.error(error);
+        setSaveError(true);
+      }
       return;
     }
 
-    const scoreMode = mode === 'free' ? 'free' : 'daily';
     try {
       const ref = await addDoc(collection(db, 'scores'), {
         uid: user.uid,
@@ -400,14 +426,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
         goalTitle: goalTitleRef.current,
         path: pathRef.current.slice(),
       });
-      window.setTimeout(() => {
-        onFinishRef.current({
-          id: ref.id,
-          timeTaken,
-          pagesVisited: pageCount,
-          mode: scoreMode,
-        });
-      }, 2000);
+      finish(ref.id);
     } catch (error) {
       console.error(error);
       setSaveError(true);

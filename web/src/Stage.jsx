@@ -1,6 +1,9 @@
+import ThemeButton from './ThemeButton';
+
 export default function Stage({ children, className = '' }) {
   return (
     <div className={className ? `stage ${className}` : 'stage'}>
+      <ThemeButton className="is-corner" />
       <div className="atmosphere" aria-hidden="true">
         <span className="cloud cloud-a" />
         <span className="cloud cloud-b" />

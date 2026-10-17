@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { enterFullscreen } from '../fullscreen';
 import { db } from '../firebase';
+import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
+import ThemeButton from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 import { articleUrl, normalizeTitle } from '../wikipedia';
 
@@ -58,7 +60,7 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay })
       className={highlighted ? 'score-row is-player' : 'score-row'}
     >
       <div className="score-main">
-        <span className={rank <= 3 ? 'num is-medal' : 'num'}>{rank}</span>
+        <span className={Number.isInteger(rank) && rank <= 3 ? 'num is-medal' : 'num'}>{rank ?? '—'}</span>
         <span className="name">{row.name}</span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
         <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
@@ -111,6 +113,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [playerRank, setPlayerRank] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deviceDaily, setDeviceDaily] = useState([]);
   const [pathRow, setPathRow] = useState(null);
   const pathDialogRef = useRef(null);
   const onHomeRef = useRef(onHome);
@@ -120,49 +123,59 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     let cancelled = false;
 
     async function load() {
+      const local = loadLocalScores();
+      const localDaily = local
+        .filter((row) => row.mode !== 'free')
+        .sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
+      const localFree = local.filter((row) => row.mode === 'free');
+      let readable = [];
+      let remoteError = '';
+
       try {
         const snapshot = await getDocs(collection(db, 'scores'));
-        const readable = snapshot.docs
+        readable = snapshot.docs
           .filter((entry) => !IGNORED_SCORE_IDS.has(entry.id))
           .map((entry) => ({ id: entry.id, ...entry.data() }));
-
-        const rows = readable.filter((row) => (
-          row.mode !== 'free' && typeof row.name === 'string' && row.name.trim()
-        ));
-
-        rows.sort((a, b) => {
-          const pages = Number(a.pagesVisited) - Number(b.pagesVisited);
-          if (pages) return pages;
-          const time = Number(a.timeTaken) - Number(b.timeTaken);
-          if (time) return time;
-          return timestampMillis(a.timestamp) - timestampMillis(b.timestamp);
-        });
-
-        const uid = user?.uid || '';
-        const mineFree = readable
-          .filter((row) => row.mode === 'free' && row.uid === uid)
-          .sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
-
-        if (cancelled) return;
-
-        const top = rows.slice(0, 10);
-        let mine = null;
-        if (highlightMode !== 'free' && highlightId && uid) {
-          const highlighted = rows.find((row) => row.id === highlightId && row.uid === uid);
-          if (highlighted) mine = highlighted;
-        }
-        if (!mine) mine = latestForUser(rows, uid);
-
-        setScores(top);
-        setFreePlays(mineFree);
-        setPlayerScore(mine || null);
-        setPlayerRank(mine ? rows.findIndex((row) => row.id === mine.id) + 1 : null);
       } catch (loadError) {
         console.error(loadError);
-        if (!cancelled) setError('לא הצלחנו לטעון את טבלת השיאים.');
-      } finally {
-        if (!cancelled) setLoading(false);
+        remoteError = 'לא הצלחנו לטעון את טבלת השיאים.';
       }
+
+      if (cancelled) return;
+
+      const rows = readable.filter((row) => (
+        row.mode !== 'free' && typeof row.name === 'string' && row.name.trim()
+      ));
+
+      rows.sort((a, b) => {
+        const pages = Number(a.pagesVisited) - Number(b.pagesVisited);
+        if (pages) return pages;
+        const time = Number(a.timeTaken) - Number(b.timeTaken);
+        if (time) return time;
+        return timestampMillis(a.timestamp) - timestampMillis(b.timestamp);
+      });
+
+      const uid = user?.uid || '';
+      const mineFree = [
+        ...readable.filter((row) => row.mode === 'free' && row.uid === uid),
+        ...localFree,
+      ].sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
+
+      const top = rows.slice(0, 10);
+      let mine = null;
+      if (highlightMode !== 'free' && highlightId && uid) {
+        const highlighted = rows.find((row) => row.id === highlightId && row.uid === uid);
+        if (highlighted) mine = highlighted;
+      }
+      if (!mine) mine = latestForUser(rows, uid);
+
+      setScores(top);
+      setFreePlays(mineFree);
+      setDeviceDaily(localDaily);
+      setPlayerScore(mine || null);
+      setPlayerRank(mine ? rows.findIndex((row) => row.id === mine.id) + 1 : null);
+      setError(remoteError);
+      setLoading(false);
     }
 
     load();
@@ -175,7 +188,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     if (loading || !highlightId) return undefined;
     document.getElementById(`score-${highlightId}`)?.scrollIntoView({ block: 'center' });
     return undefined;
-  }, [highlightId, loading, scores, freePlays]);
+  }, [highlightId, loading, scores, freePlays, deviceDaily]);
 
   useEffect(() => {
     if (!pathRow) return undefined;
@@ -189,6 +202,8 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
 
   const highlightedId = playerScore?.id;
   const pathTitles = savedPath(pathRow);
+  const savedOnDevice = deviceDaily.some((row) => row.id === highlightId)
+    || freePlays.some((row) => row.local && row.id === highlightId);
 
   function replay(row) {
     if (!canReplay(row)) return;
@@ -200,9 +215,12 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     <Stage className="stage-board">
       <header className="stage-bar">
         <p className="wordmark">משחק <em>הוויקיפדיה</em></p>
-        <button className="pill pill-quiet" type="button" onClick={() => onHomeRef.current()}>
-          חזרה
-        </button>
+        <div className="stage-actions">
+          <ThemeButton />
+          <button className="pill pill-quiet" type="button" onClick={() => onHomeRef.current()}>
+            חזרה
+          </button>
+        </div>
       </header>
       <main className="board">
         <div className="board-scroll">
@@ -210,7 +228,9 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
           <h1>השיאים</h1>
           <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
           {highlightId ? (
-            <p className="saved-note" role="status">התוצאה שלכם מסומנת בטבלה.</p>
+            <p className="saved-note" role="status">
+              {savedOnDevice ? 'התוצאה נשמרה במכשיר הזה.' : 'התוצאה שלכם מסומנת בטבלה.'}
+            </p>
           ) : null}
 
           <div className="board-columns">
@@ -240,9 +260,28 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                       highlighted={row.id === highlightedId}
                       onShowPath={setPathRow}
                       onReplay={replay}
-                      allowReplay={Boolean(user)}
+                      allowReplay
                     />
                   ))}
+                </div>
+              ) : null}
+
+              {deviceDaily.length > 0 ? (
+                <div className="device-scores">
+                  <h3>במכשיר הזה</h3>
+                  <div className="score-table">
+                    {deviceDaily.map((row) => (
+                      <DailyRow
+                        key={row.id}
+                        row={row}
+                        rank={null}
+                        highlighted={row.id === highlightId}
+                        onShowPath={setPathRow}
+                        onReplay={replay}
+                        allowReplay
+                      />
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
@@ -255,7 +294,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                     highlighted
                     onShowPath={setPathRow}
                     onReplay={replay}
-                    allowReplay={Boolean(user)}
+                    allowReplay
                   />
                 </div>
               ) : null}
@@ -263,8 +302,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
 
             <section className="free-board" aria-label="המשחקים החופשיים שלי">
               <h2>המשחקים החופשיים שלי</h2>
-              {!user ? <p className="empty">התחברו כדי לראות את המשחקים החופשיים שלכם.</p> : null}
-              {user && !loading && !error && freePlays.length === 0 ? (
+              {!loading && !error && freePlays.length === 0 ? (
                 <p className="empty">עדיין אין משחקים חופשיים.</p>
               ) : null}
               {freePlays.length > 0 ? (
@@ -281,7 +319,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                       highlighted={highlightMode === 'free' && row.id === highlightId}
                       onShowPath={setPathRow}
                       onReplay={replay}
-                      allowReplay={Boolean(user)}
+                      allowReplay
                     />
                   ))}
                 </div>
@@ -291,7 +329,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         </div>
         <div className="board-bar">
           <button className="primary" type="button" onClick={() => onHomeRef.current()}>
-            {user ? 'משחק חדש' : 'חזרה'}
+            משחק חדש
           </button>
         </div>
       </main>
