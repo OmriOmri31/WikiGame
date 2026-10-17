@@ -375,8 +375,7 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-inline: 60px;
-  padding-inline-end: 108px;
+  padding-inline: 108px;
   font-weight: 600;
   font-size: 1.05rem;
   letter-spacing: -0.014em;
