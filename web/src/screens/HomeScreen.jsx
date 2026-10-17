@@ -13,9 +13,26 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { accountName, authErrorMessage } from '../account';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
+import Stage from '../Stage';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 
-const LEDE = 'כל יום מתחילים בערך פופולרי אחר, ומגיעים לערך המטרה רק דרך קישורים בתוך ויקיפדיה. בלי חיפוש ובלי קישורים החוצה. פחות צעדים מנצח, ובשוויון — הזמן הקצר יותר. במשחק החופשי כל סיבוב מקבל זוג ערכים אחר, בלי הגבלה.';
+const STEPS = [
+  {
+    id: 'start',
+    title: 'ערך פתיחה',
+    body: 'כל יום מתחילים בערך פופולרי אחר.',
+  },
+  {
+    id: 'links',
+    title: 'רק קישורים',
+    body: 'מגיעים לערך המטרה רק דרך קישורים בתוך ויקיפדיה. בלי חיפוש ובלי קישורים החוצה.',
+  },
+  {
+    id: 'finish',
+    title: 'ניצחון',
+    body: 'פחות צעדים מנצח, ובשוויון — הזמן הקצר יותר.',
+  },
+];
 
 function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -46,6 +63,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
+  const [step, setStep] = useState('links');
 
   useEffect(() => {
     if (redirectError) setError(redirectError);
@@ -233,141 +251,197 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     || accountName(user);
 
   return (
-    <main className="screen">
-      <div className="card">
-        <h1>ברוכים הבאים למשחק הוויקיפדיה!</h1>
-        <p className="lede">{LEDE}</p>
+    <Stage className="stage-home">
+      <header className="stage-bar">
+        <p className="wordmark">משחק <em>הוויקיפדיה</em></p>
+        <button className="pill" type="button" onClick={onLeaderboard}>
+          טבלת השיאים
+        </button>
+      </header>
 
-        {user ? (
-          <>
-            <p className="greeting">שלום, {greeting}</p>
-            <button className="primary" type="button" onClick={startGame}>התחל</button>
-            <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
-            <div className="action-list">
-              <button className="text-button" type="button" onClick={onLeaderboard}>
-                טבלת השיאים
+      <main className="home-grid">
+        <section className="story rise">
+          <p className="kicker">משחק יומי</p>
+          <h1>מגיעים לכל ערך, רק דרך קישורים.</h1>
+          <p className="lede">
+            כל יום מתחילים בערך פופולרי אחר, ומגיעים לערך המטרה בלי חיפוש ובלי לצאת מוויקיפדיה.
+          </p>
+          <div className="proof">
+            {STEPS.map((item, index) => (
+              <button
+                key={item.id}
+                className={step === item.id ? 'proof-step is-on' : 'proof-step'}
+                type="button"
+                aria-pressed={step === item.id}
+                onClick={() => setStep(item.id)}
+              >
+                <span className="proof-index">{String(index + 1).padStart(2, '0')}</span>
+                <strong>{item.title}</strong>
+                <span>{item.body}</span>
               </button>
-              <button className="text-button danger" type="button" onClick={handleSignOut}>
-                התנתקות
-              </button>
-            </div>
-            {error ? <p className="form-error" role="alert">{error}</p> : null}
-            <section className="my-scores" aria-label="התוצאות היומיות שלי">
-              <h2>התוצאות היומיות שלי</h2>
-              {scoresLoading ? <p className="status">טוען תוצאות…</p> : null}
-              {scoresError ? <p className="form-error" role="alert">{scoresError}</p> : null}
-              {!scoresLoading && !scoresError && myScores.length === 0 ? (
-                <p className="status">עדיין אין תוצאות.</p>
-              ) : null}
-              {myScores.map((row) => (
-                <div className="my-score" key={row.id}>
-                  <span>{formatScoreDate(row.timestamp)}</span>
-                  <span><bdi dir="ltr">{row.pagesVisited}</bdi> צעדים</span>
-                  <bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi>
-                </div>
-              ))}
-            </section>
-          </>
-        ) : (
-          <>
-            {mode === 'reset' ? (
-              <form onSubmit={submitReset} noValidate>
-                <label htmlFor="reset-email">אימייל</label>
-                <input
-                  id="reset-email"
-                  type="email"
-                  dir="ltr"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  disabled={busy}
-                />
+            ))}
+          </div>
+          <p className="aside">במשחק החופשי כל סיבוב מקבל זוג ערכים אחר, בלי הגבלה.</p>
+        </section>
+
+        <section className="panel glass rise rise-late" aria-label={user ? 'התחלה' : 'חשבון'}>
+          <div className="panel-scroll">
+            {user ? (
+              <>
+                <p className="kicker">החשבון</p>
+                <h2 className="greeting">שלום, {greeting}</h2>
+                <button className="primary" type="button" onClick={startGame}>התחל משחק יומי</button>
+                <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
+                <p className="hint">כל סיבוב מקבל זוג ערכים אחר, בלי הגבלה.</p>
                 {error ? <p className="form-error" role="alert">{error}</p> : null}
-                {notice ? <p className="form-note">{notice}</p> : null}
-                <button className="primary" type="submit" disabled={busy}>
-                  {busy ? 'שולח…' : 'שליחת קישור לאיפוס'}
+                <section className="my-scores" aria-label="התוצאות היומיות שלי">
+                  <h3>התוצאות היומיות שלי</h3>
+                  {scoresLoading ? <p className="status">טוען תוצאות…</p> : null}
+                  {scoresError ? <p className="form-error" role="alert">{scoresError}</p> : null}
+                  {!scoresLoading && !scoresError && myScores.length === 0 ? (
+                    <p className="empty">עדיין אין תוצאות.</p>
+                  ) : null}
+                  {myScores.length > 0 ? (
+                    <div className="score-list">
+                      {myScores.map((row) => (
+                        <div className="my-score" key={row.id}>
+                          <span>{formatScoreDate(row.timestamp)}</span>
+                          <span><bdi dir="ltr">{row.pagesVisited}</bdi> צעדים</span>
+                          <bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+                <button className="text-button danger" type="button" onClick={handleSignOut}>
+                  התנתקות
                 </button>
-              </form>
+              </>
             ) : (
-              <form onSubmit={mode === 'sign-up' ? submitSignUp : submitSignIn} noValidate>
-                {mode === 'sign-up' ? (
+              <>
+                {mode === 'reset' ? (
                   <>
-                    <label htmlFor="display-name">שם לתצוגה</label>
-                    <input
-                      id="display-name"
-                      value={displayName}
-                      onChange={(event) => setDisplayName(event.target.value)}
-                      autoComplete="nickname"
-                      maxLength={40}
-                      disabled={busy}
-                    />
+                    <p className="kicker">חשבון</p>
+                    <h2>איפוס סיסמה</h2>
+                    <form onSubmit={submitReset} noValidate>
+                      <label htmlFor="reset-email">אימייל</label>
+                      <input
+                        id="reset-email"
+                        type="email"
+                        dir="ltr"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        disabled={busy}
+                      />
+                      {error ? <p className="form-error" role="alert">{error}</p> : null}
+                      {notice ? <p className="form-note">{notice}</p> : null}
+                      <button className="primary" type="submit" disabled={busy}>
+                        {busy ? 'שולח…' : 'שליחת קישור לאיפוס'}
+                      </button>
+                    </form>
+                    <div className="form-links">
+                      <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
+                        חזרה להתחברות
+                      </button>
+                    </div>
                   </>
-                ) : null}
-                <label htmlFor="account-email">אימייל</label>
-                <input
-                  id="account-email"
-                  type="email"
-                  dir="ltr"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  disabled={busy}
-                />
-                <label htmlFor="account-password">סיסמה</label>
-                <input
-                  id="account-password"
-                  type="password"
-                  dir="ltr"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-                  disabled={busy}
-                />
-                {error ? <p className="form-error" role="alert">{error}</p> : null}
-                <button className="primary" type="submit" disabled={busy}>
-                  {mode === 'sign-up' ? 'יצירת חשבון' : 'התחברות'}
-                </button>
-              </form>
+                ) : (
+                  <>
+                    <div className={mode === 'sign-up' ? 'segment is-sign-up' : 'segment'} role="tablist" aria-label="סוג כניסה">
+                      <span className="segment-thumb" aria-hidden="true" />
+                      <button
+                        id="tab-sign-in"
+                        type="button"
+                        role="tab"
+                        aria-selected={mode === 'sign-in'}
+                        aria-controls="account-panel"
+                        onClick={() => switchMode('sign-in')}
+                      >
+                        התחברות
+                      </button>
+                      <button
+                        id="tab-sign-up"
+                        type="button"
+                        role="tab"
+                        aria-selected={mode === 'sign-up'}
+                        aria-controls="account-panel"
+                        onClick={() => switchMode('sign-up')}
+                      >
+                        חשבון חדש
+                      </button>
+                    </div>
+                    <form
+                      id="account-panel"
+                      role="tabpanel"
+                      aria-labelledby={mode === 'sign-up' ? 'tab-sign-up' : 'tab-sign-in'}
+                      onSubmit={mode === 'sign-up' ? submitSignUp : submitSignIn}
+                      noValidate
+                    >
+                      {mode === 'sign-up' ? (
+                        <>
+                          <label htmlFor="display-name">שם לתצוגה</label>
+                          <input
+                            id="display-name"
+                            value={displayName}
+                            onChange={(event) => setDisplayName(event.target.value)}
+                            autoComplete="nickname"
+                            maxLength={40}
+                            disabled={busy}
+                          />
+                        </>
+                      ) : null}
+                      <label htmlFor="account-email">אימייל</label>
+                      <input
+                        id="account-email"
+                        type="email"
+                        dir="ltr"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        disabled={busy}
+                      />
+                      <label htmlFor="account-password">סיסמה</label>
+                      <input
+                        id="account-password"
+                        type="password"
+                        dir="ltr"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
+                        disabled={busy}
+                      />
+                      {error ? <p className="form-error" role="alert">{error}</p> : null}
+                      <button className="primary" type="submit" disabled={busy}>
+                        {busy ? 'רגע…' : (mode === 'sign-up' ? 'יצירת חשבון' : 'התחברות')}
+                      </button>
+                    </form>
+                    <button className="secondary google" type="button" onClick={continueWithGoogle} disabled={busy}>
+                      <span className="google-mark" aria-hidden="true">G</span>
+                      התחברות עם Google
+                    </button>
+                    <div className="form-links">
+                      {mode === 'sign-in' ? (
+                        <button className="text-button" type="button" onClick={() => switchMode('reset')}>
+                          שכחתי סיסמה
+                        </button>
+                      ) : (
+                        <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
+                          כבר יש לי חשבון
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
             )}
-
-            {mode !== 'reset' ? (
-              <button className="secondary" type="button" onClick={continueWithGoogle} disabled={busy}>
-                התחברות עם Google
-              </button>
-            ) : null}
-
-            <div className="action-list">
-              {mode === 'sign-in' ? (
-                <>
-                  <button className="text-button" type="button" onClick={() => switchMode('sign-up')}>
-                    יצירת חשבון
-                  </button>
-                  <button className="text-button" type="button" onClick={() => switchMode('reset')}>
-                    שכחתי סיסמה
-                  </button>
-                </>
-              ) : null}
-              {mode === 'sign-up' ? (
-                <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
-                  כבר יש לי חשבון
-                </button>
-              ) : null}
-              {mode === 'reset' ? (
-                <button className="text-button" type="button" onClick={() => switchMode('sign-in')}>
-                  חזרה להתחברות
-                </button>
-              ) : null}
-              <button className="text-button" type="button" onClick={onLeaderboard}>
-                טבלת השיאים
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </main>
+          </div>
+        </section>
+      </main>
+    </Stage>
   );
 }

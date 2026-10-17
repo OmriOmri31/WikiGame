@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
 import { exitFullscreen } from './fullscreen';
+import Stage from './Stage';
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
 import GameScreen from './screens/GameScreen';
@@ -82,9 +83,11 @@ export default function App() {
 
   if (screen === 'game' && !user) {
     return (
-      <main className="screen">
-        <p className="status">טוען…</p>
-      </main>
+      <Stage>
+        <main className="stage-status">
+          <p className="status">טוען…</p>
+        </main>
+      </Stage>
     );
   }
 
@@ -105,9 +108,11 @@ export default function App() {
 
   if (!authReady) {
     return (
-      <main className="screen">
-        <p className="status">טוען…</p>
-      </main>
+      <Stage>
+        <main className="stage-status">
+          <p className="status">טוען…</p>
+        </main>
+      </Stage>
     );
   }
 

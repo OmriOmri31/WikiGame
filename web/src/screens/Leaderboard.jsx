@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { enterFullscreen } from '../fullscreen';
 import { db } from '../firebase';
+import Stage from '../Stage';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 import { articleUrl, normalizeTitle } from '../wikipedia';
 
@@ -57,7 +58,7 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay })
       className={highlighted ? 'score-row is-player' : 'score-row'}
     >
       <div className="score-main">
-        <span className="num">{rank}</span>
+        <span className={rank <= 3 ? 'num is-medal' : 'num'}>{rank}</span>
         <span className="name">{row.name}</span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
         <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
@@ -196,88 +197,104 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   }
 
   return (
-    <main className="board">
-      <div className="board-scroll">
-      <h1>טבלת השיאים</h1>
-      <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
-      <h2>משחק יומי</h2>
-
-      {loading ? <p className="status">טוען תוצאות…</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
-
-      {!loading && !error && scores.length === 0 ? (
-        <p className="status">עדיין אין תוצאות.</p>
-      ) : null}
-
-      {scores.length > 0 ? (
-        <div className="score-table">
-          <div className="score-head">
-            <span>מקום</span>
-            <span>שם</span>
-            <span>צעדים</span>
-            <span>זמן</span>
-          </div>
-          {scores.map((row, index) => (
-            <DailyRow
-              key={row.id}
-              row={row}
-              rank={index + 1}
-              highlighted={row.id === highlightedId}
-              onShowPath={setPathRow}
-              onReplay={replay}
-              allowReplay={Boolean(user)}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {playerRank > 10 && playerScore ? (
-        <div className="outside-top">
-          <p className="dots" aria-hidden="true">···</p>
-          <DailyRow
-            row={playerScore}
-            rank={playerRank}
-            highlighted
-            onShowPath={setPathRow}
-            onReplay={replay}
-            allowReplay={Boolean(user)}
-          />
-        </div>
-      ) : null}
-
-      <section className="free-board" aria-label="המשחקים החופשיים שלי">
-        <h2>המשחקים החופשיים שלי</h2>
-        {!user ? <p className="status">התחברו כדי לראות את המשחקים החופשיים שלכם.</p> : null}
-        {user && !loading && !error && freePlays.length === 0 ? (
-          <p className="status">עדיין אין משחקים חופשיים.</p>
-        ) : null}
-        {freePlays.length > 0 ? (
-          <div className="score-table">
-            <div className="score-head free-main">
-              <span>תאריך</span>
-              <span>צעדים</span>
-              <span>זמן</span>
-            </div>
-            {freePlays.map((row) => (
-              <FreePlayRow
-                key={row.id}
-                row={row}
-                highlighted={highlightMode === 'free' && row.id === highlightId}
-                onShowPath={setPathRow}
-                onReplay={replay}
-                allowReplay={Boolean(user)}
-              />
-            ))}
-          </div>
-        ) : null}
-      </section>
-
-      </div>
-      <div className="board-bar">
-        <button className="primary" type="button" onClick={() => onHomeRef.current()}>
-          {user ? 'משחק חדש' : 'חזרה'}
+    <Stage className="stage-board">
+      <header className="stage-bar">
+        <p className="wordmark">משחק <em>הוויקיפדיה</em></p>
+        <button className="pill pill-quiet" type="button" onClick={() => onHomeRef.current()}>
+          חזרה
         </button>
-      </div>
+      </header>
+      <main className="board">
+        <div className="board-scroll">
+          <p className="kicker">טבלה</p>
+          <h1>השיאים</h1>
+          <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
+          {highlightId ? (
+            <p className="saved-note" role="status">התוצאה שלכם מסומנת בטבלה.</p>
+          ) : null}
+
+          <div className="board-columns">
+            <section aria-label="משחק יומי">
+              <h2>משחק יומי</h2>
+
+              {loading ? <p className="status">טוען תוצאות…</p> : null}
+              {error ? <p className="form-error" role="alert">{error}</p> : null}
+
+              {!loading && !error && scores.length === 0 ? (
+                <p className="empty">עדיין אין תוצאות.</p>
+              ) : null}
+
+              {scores.length > 0 ? (
+                <div className="score-table">
+                  <div className="score-head">
+                    <span>מקום</span>
+                    <span>שם</span>
+                    <span>צעדים</span>
+                    <span>זמן</span>
+                  </div>
+                  {scores.map((row, index) => (
+                    <DailyRow
+                      key={row.id}
+                      row={row}
+                      rank={index + 1}
+                      highlighted={row.id === highlightedId}
+                      onShowPath={setPathRow}
+                      onReplay={replay}
+                      allowReplay={Boolean(user)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+
+              {playerRank > 10 && playerScore ? (
+                <div className="outside-top">
+                  <p className="dots" aria-hidden="true">···</p>
+                  <DailyRow
+                    row={playerScore}
+                    rank={playerRank}
+                    highlighted
+                    onShowPath={setPathRow}
+                    onReplay={replay}
+                    allowReplay={Boolean(user)}
+                  />
+                </div>
+              ) : null}
+            </section>
+
+            <section className="free-board" aria-label="המשחקים החופשיים שלי">
+              <h2>המשחקים החופשיים שלי</h2>
+              {!user ? <p className="empty">התחברו כדי לראות את המשחקים החופשיים שלכם.</p> : null}
+              {user && !loading && !error && freePlays.length === 0 ? (
+                <p className="empty">עדיין אין משחקים חופשיים.</p>
+              ) : null}
+              {freePlays.length > 0 ? (
+                <div className="score-table">
+                  <div className="score-head free-main">
+                    <span>תאריך</span>
+                    <span>צעדים</span>
+                    <span>זמן</span>
+                  </div>
+                  {freePlays.map((row) => (
+                    <FreePlayRow
+                      key={row.id}
+                      row={row}
+                      highlighted={highlightMode === 'free' && row.id === highlightId}
+                      onShowPath={setPathRow}
+                      onReplay={replay}
+                      allowReplay={Boolean(user)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </div>
+        <div className="board-bar">
+          <button className="primary" type="button" onClick={() => onHomeRef.current()}>
+            {user ? 'משחק חדש' : 'חזרה'}
+          </button>
+        </div>
+      </main>
 
       {pathRow ? (
         <div className="modal-backdrop" role="presentation" onClick={() => setPathRow(null)}>
@@ -300,6 +317,6 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
           </div>
         </div>
       ) : null}
-    </main>
+    </Stage>
   );
 }
