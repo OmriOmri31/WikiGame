@@ -1,6 +1,6 @@
 import { normalizeTitle } from './wikipedia.js';
 
-export const REASONER_NAME = 'השחקן החושב';
+export const REASONER_NAME = 'וויקי בוט';
 export const REASONER_UID = 'wiki-reasoner';
 export const REASONER_MAX_PAGES = 25;
 

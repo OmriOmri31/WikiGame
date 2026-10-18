@@ -7,7 +7,7 @@ import Stage from '../Stage';
 import ThemeButton from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 import { subscribeBot } from '../botRun';
-import { isReasoner } from '../reasonerBot';
+import { isReasoner, REASONER_NAME } from '../reasonerBot';
 import { isWikiBot, WIKI_BOT_NAME } from '../wikiBot';
 import { articleUrl, normalizeTitle } from '../wikipedia';
 
@@ -85,7 +85,7 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, s
       <div className="score-main">
         <span className={Number.isInteger(rank) && rank <= 3 ? 'num is-medal' : 'num'}>{rank ?? '—'}</span>
         <span className="name">
-          {isWikiBot(row) ? WIKI_BOT_NAME : row.name}
+          {isWikiBot(row) ? WIKI_BOT_NAME : isReasoner(row) ? REASONER_NAME : row.name}
           {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
         </span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
