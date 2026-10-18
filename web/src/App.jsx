@@ -111,6 +111,10 @@ export default function App() {
       onStart={() => beginGame({ mode: 'daily' })}
       onFreePlay={() => beginGame({ mode: 'free' })}
       onLeaderboard={() => setScreen('leaderboard')}
+      onCustomGame={(id) => {
+        setResult({ id, mode: 'free' });
+        setScreen('leaderboard');
+      }}
     />
   );
 }

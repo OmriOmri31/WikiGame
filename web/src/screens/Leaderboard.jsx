@@ -50,7 +50,16 @@ function winKey(row) {
   return `${start}\n${goal}`;
 }
 
-function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, showPath = true, showFastest = false }) {
+function ScoreActions({
+  row,
+  onShowPath,
+  onShowFastest,
+  onReplay,
+  allowReplay,
+  showPath = true,
+  showFastest = false,
+  replayLabel = 'שחק שוב',
+}) {
   const replayReady = allowReplay && canReplay(row);
   return (
     <div className="score-actions">
@@ -70,7 +79,7 @@ function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, s
         onClick={() => onReplay(row)}
         disabled={!replayReady}
       >
-        שחק שוב
+        {replayLabel}
       </button>
     </div>
   );
@@ -110,8 +119,10 @@ function FreePlayRow({ row, highlighted, onShowPath, onShowFastest, onReplay, al
     >
       <div className="score-main free-main">
         <span>{formatScoreDate(row.timestamp)}</span>
-        <span className="num" dir="ltr">{row.pagesVisited}</span>
-        <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
+        <span className="num" dir="ltr">{row.preset ? '—' : row.pagesVisited}</span>
+        <span className="num">
+          <bdi className="clock" dir="ltr">{row.preset ? '—' : formatDuration(row.timeTaken)}</bdi>
+        </span>
       </div>
       <p className="free-route" dir="rtl">
         <bdi>{row.startTitle || '—'}</bdi>
@@ -127,6 +138,7 @@ function FreePlayRow({ row, highlighted, onShowPath, onShowFastest, onReplay, al
         allowReplay={allowReplay}
         showPath={savedPath(row).length > 0}
         showFastest={Array.isArray(row.fastestPath)}
+        replayLabel={row.preset ? 'שחק' : 'שחק שוב'}
       />
     </div>
   );
@@ -336,7 +348,11 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
           <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
           {highlightId ? (
             <p className="saved-note" role="status">
-              {savedOnDevice ? 'התוצאה נשמרה במכשיר הזה.' : 'התוצאה שלכם מסומנת בטבלה.'}
+              {highlightMode === 'free' && freePlays.some((row) => row.id === highlightId && row.preset)
+                ? 'המשחק נוסף לטבלה.'
+                : savedOnDevice
+                  ? 'התוצאה נשמרה במכשיר הזה.'
+                  : 'התוצאה שלכם מסומנת בטבלה.'}
             </p>
           ) : null}
 

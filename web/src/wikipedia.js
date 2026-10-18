@@ -61,6 +61,45 @@ export function titleFromHref(href) {
   return { kind: 'article', title, hash: url.hash || '' };
 }
 
+export async function searchArticles(term, { signal } = {}) {
+  const query = String(term || '').trim();
+  if (!query) return [];
+  const endpoint = new URL(API);
+  endpoint.searchParams.set('action', 'opensearch');
+  endpoint.searchParams.set('search', query);
+  endpoint.searchParams.set('limit', '8');
+  endpoint.searchParams.set('namespace', '0');
+  endpoint.searchParams.set('format', 'json');
+  endpoint.searchParams.set('origin', '*');
+
+  const response = await fetch(endpoint, { signal });
+  if (!response.ok) throw new Error('network');
+  const data = await response.json();
+  const titles = Array.isArray(data?.[1]) ? data[1] : [];
+  return titles.map((title) => normalizeTitle(title)).filter(Boolean);
+}
+
+export async function resolveArticleTitle(title) {
+  const endpoint = new URL(API);
+  endpoint.searchParams.set('action', 'query');
+  endpoint.searchParams.set('titles', normalizeTitle(title));
+  endpoint.searchParams.set('redirects', '1');
+  endpoint.searchParams.set('format', 'json');
+  endpoint.searchParams.set('formatversion', '2');
+  endpoint.searchParams.set('origin', '*');
+
+  const response = await fetch(endpoint);
+  if (!response.ok) throw new Error('network');
+  const data = await response.json();
+  const page = data.query?.pages?.[0];
+  if (!page || page.missing || page.invalid || !page.title) {
+    const error = new Error('missing');
+    error.code = 'missingtitle';
+    throw error;
+  }
+  return page.title;
+}
+
 export async function fetchArticle(title) {
   const endpoint = new URL(API);
   endpoint.searchParams.set('action', 'parse');
