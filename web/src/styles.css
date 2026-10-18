@@ -1184,7 +1184,8 @@ mark.page-find.is-current {
   font-weight: 500;
 }
 
-.score-row.is-fastest .name {
+.score-row.is-fastest .name,
+.score-row.is-reasoner .name {
   white-space: normal;
   line-height: 1.25;
 }

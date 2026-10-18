@@ -7,6 +7,7 @@ import Stage from '../Stage';
 import ThemeButton from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 import { subscribeBot } from '../botRun';
+import { isReasoner } from '../reasonerBot';
 import { isWikiBot, WIKI_BOT_NAME } from '../wikiBot';
 import { articleUrl, normalizeTitle } from '../wikipedia';
 
@@ -79,11 +80,14 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, s
   return (
     <div
       id={`score-${row.id}`}
-      className={['score-row', highlighted ? 'is-player' : '', isWikiBot(row) ? 'is-fastest' : ''].filter(Boolean).join(' ')}
+      className={['score-row', highlighted ? 'is-player' : '', isWikiBot(row) ? 'is-fastest' : '', isReasoner(row) ? 'is-reasoner' : ''].filter(Boolean).join(' ')}
     >
       <div className="score-main">
         <span className={Number.isInteger(rank) && rank <= 3 ? 'num is-medal' : 'num'}>{rank ?? '—'}</span>
-        <span className="name">{isWikiBot(row) ? WIKI_BOT_NAME : row.name}</span>
+        <span className="name">
+          {isWikiBot(row) ? WIKI_BOT_NAME : row.name}
+          {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
+        </span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
         <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
       </div>
@@ -152,6 +156,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [error, setError] = useState('');
   const [deviceDaily, setDeviceDaily] = useState([]);
   const [outsideBots, setOutsideBots] = useState([]);
+  const [reasonerGiveUps, setReasonerGiveUps] = useState([]);
   const [wonKeys, setWonKeys] = useState(() => new Set());
   const [botPhase, setBotPhase] = useState('idle');
   const [reloadToken, setReloadToken] = useState(0);
@@ -234,7 +239,15 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       setFreePlays(mineFree);
       setDeviceDaily(localDaily);
       setOutsideBots(rows.flatMap((row, index) => (
-        isWikiBot(row) && index >= 10 ? [{ row, rank: index + 1 }] : []
+        (isWikiBot(row) || isReasoner(row)) && index >= 10 ? [{ row, rank: index + 1 }] : []
+      )));
+      setReasonerGiveUps(readable.filter((row) => (
+        isReasoner(row)
+        && row.gaveUp
+        && !row.lock
+        && row.mode !== 'free'
+        && typeof row.name === 'string'
+        && row.name.trim()
       )));
       setWonKeys(won);
       setPlayerScore(mine || null);
@@ -274,7 +287,13 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     ...outsideBots
       .filter((item) => item.row.id !== playerScore?.id)
       .map((item) => ({ ...item, highlighted: false })),
-  ].sort((a, b) => a.rank - b.rank);
+    ...reasonerGiveUps.map((row) => ({ row, rank: null, highlighted: false })),
+  ].sort((a, b) => {
+    if (a.rank == null && b.rank == null) return timestampMillis(b.row.timestamp) - timestampMillis(a.row.timestamp);
+    if (a.rank == null) return 1;
+    if (b.rank == null) return -1;
+    return a.rank - b.rank;
+  });
 
   function showDailyPath(row) {
     const key = winKey(row);
