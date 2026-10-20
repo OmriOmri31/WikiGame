@@ -5,17 +5,6 @@ export function accountName(user) {
   return localPart || 'שחקן';
 }
 
-const OWNER_EMAIL = 'iamaman121@gmail.com';
-
-export function isOwnerAccount(user) {
-  if (!user) return false;
-  const providers = user.providerData || [];
-  const google = providers.some((entry) => entry.providerId === 'google.com');
-  if (!google) return false;
-  const emails = [user.email, ...providers.map((entry) => entry.email)];
-  return emails.some((email) => String(email || '').trim().toLowerCase() === OWNER_EMAIL);
-}
-
 const AUTH_ERRORS = {
   'auth/invalid-email': 'כתובת האימייל אינה תקינה.',
   'auth/missing-email': 'יש להזין אימייל.',

@@ -10,8 +10,7 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { accountName, authErrorMessage, isOwnerAccount } from '../account';
-import CustomPair from '../CustomPair';
+import { accountName, authErrorMessage } from '../account';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
@@ -41,7 +40,7 @@ async function loadPersonalScores(uid) {
   }
 }
 
-export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard, onCustomGame }) {
+export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard }) {
   const theme = useTheme();
   const [mode, setMode] = useState('sign-in');
   const [mailOpen, setMailOpen] = useState(false);
@@ -262,7 +261,6 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
 
   return (
     <Stage className="stage-home">
-      {isOwnerAccount(user) ? <CustomPair user={user} onCreated={onCustomGame} /> : null}
       <main className="home-page">
         <header className="home-hero">
           <h1 className="home-title">
