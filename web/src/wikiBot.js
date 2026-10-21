@@ -1,4 +1,4 @@
-import { normalizeTitle, sameTitle } from './wikipedia';
+import { normalizeTitle, sameTitle } from './wikipedia.js';
 
 export const WIKI_BOT_NAME = 'הדרך המהירה ביותר';
 export const WIKI_BOT_UID = 'wiki-bot';

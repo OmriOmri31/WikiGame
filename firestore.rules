@@ -1,0 +1,17 @@
+rules_version = '2';
+// Add this match to the rules already published in the Firebase console.
+// Do not deploy this file by itself: a ruleset with only this block denies
+// every other collection, including scores and daily/articles.
+// Replace PASTE_FIREBASE_UID with the same value as ADMIN_UID in web/src/admin.js.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isDeskAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'PASTE_FIREBASE_UID';
+    }
+
+    match /lotteryQueue/{id} {
+      allow read, write: if isDeskAdmin();
+    }
+  }
+}

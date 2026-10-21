@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { ADMIN_UID, isAdmin } from './admin';
 import { startDailyBot } from './botRun';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
@@ -9,9 +10,14 @@ import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
 import GameScreen from './screens/GameScreen';
 import Leaderboard from './screens/Leaderboard';
+import AdminScreen from './screens/AdminScreen';
+
+function deskPath() {
+  return window.location.pathname === '/admin';
+}
 
 export default function App() {
-  const [screen, setScreen] = useState('splash');
+  const [screen, setScreen] = useState(() => (deskPath() ? 'admin' : 'splash'));
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [authNotice, setAuthNotice] = useState('');
@@ -21,9 +27,10 @@ export default function App() {
 
   function beginGame(next) {
     const nextPair = next.pair?.startTitle && next.pair?.goalTitle ? next.pair : null;
+    const mode = next.mode === 'free' || next.mode === 'preview' ? next.mode : 'daily';
     setResult(null);
     setMatch({
-      mode: next.mode === 'free' ? 'free' : 'daily',
+      mode,
       pair: nextPair,
       id: Date.now(),
     });
@@ -31,8 +38,16 @@ export default function App() {
   }
 
   useEffect(() => {
-    document.title = 'משחק הוויקיפדיה';
+    document.title = screen === 'admin' ? 'ניהול המשחק' : 'משחק הוויקיפדיה';
   }, [screen]);
+
+  useEffect(() => {
+    if (!authReady || !user || isAdmin(user)) return;
+    if (screen !== 'admin' && !deskPath()) return;
+    if (!ADMIN_UID) console.warn('Set ADMIN_UID in web/src/admin.js to open the desk.');
+    window.history.replaceState(null, '', '/');
+    setScreen('home');
+  }, [authReady, user, screen]);
 
   useEffect(() => startDailyBot(), []);
 
@@ -68,12 +83,16 @@ export default function App() {
         mode={match.mode}
         pair={match.pair}
         onFinish={(score) => {
+          if (match.mode === 'preview') {
+            setScreen('admin');
+            return;
+          }
           setResult(score);
           setScreen('leaderboard');
         }}
         onExit={() => {
           setResult(null);
-          setScreen('home');
+          setScreen(match.mode === 'preview' ? 'admin' : 'home');
         }}
       />
     );
@@ -90,6 +109,24 @@ export default function App() {
           mode: row.mode === 'free' ? 'free' : 'daily',
           pair: { startTitle: row.startTitle, goalTitle: row.goalTitle },
         })}
+      />
+    );
+  }
+
+  if (screen === 'admin') {
+    if (!authReady || (user && !isAdmin(user))) {
+      return (
+        <Stage>
+          <main className="stage-status">
+            <p className="status">טוען…</p>
+          </main>
+        </Stage>
+      );
+    }
+    return (
+      <AdminScreen
+        user={user}
+        onPlay={(pair) => beginGame({ mode: 'preview', pair })}
       />
     );
   }

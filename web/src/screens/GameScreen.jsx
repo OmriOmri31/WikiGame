@@ -415,6 +415,19 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     setFinalTime(timeTaken);
     setCongratsOpen(true);
 
+    if (mode === 'preview') {
+      const delay = Math.max(0, 2000 - (Date.now() - shownAt));
+      window.setTimeout(() => {
+        onFinishRef.current({
+          id: '',
+          timeTaken,
+          pagesVisited: pageCount,
+          mode: 'preview',
+        });
+      }, delay);
+      return;
+    }
+
     const scoreMode = mode === 'free' ? 'free' : 'daily';
     const fastest = scoreMode === 'free' ? await shortestFreePath() : null;
     if (scoreMode === 'free') setSeekingFastest(false);

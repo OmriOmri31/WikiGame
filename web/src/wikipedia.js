@@ -175,6 +175,28 @@ export function israelDateKey(date = new Date()) {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
+export function israelHour(date = new Date()) {
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    timeZone: ISRAEL_TIME_ZONE,
+    hour: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  return Number(formatted.find((part) => part.type === 'hour')?.value) || 0;
+}
+
+export function addIsraelDays(dateKey, days) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+}
+
+// The pair that goes live at the next 12:00 Israel time.
+export function nextPublishDateKey(date = new Date()) {
+  const today = israelDateKey(date);
+  return israelHour(date) < 12 ? today : addIsraelDays(today, 1);
+}
+
 function pageviewDateParts(date = new Date(), extraLag = 0) {
   const { year, month, day } = israelDateParts(date);
   const shifted = new Date(Date.UTC(year, month - 1, day - PAGEVIEW_LAG_DAYS - extraLag));
@@ -283,6 +305,25 @@ export async function pickFreePlayPair(date = new Date()) {
     }
   }
   return { start: pool[startIndex], goal: pool[goalIndex] };
+}
+
+// `taken` is a set of "start\ngoal" keys. The drawn pair is added to it.
+export async function drawDistinctPair(taken, date = new Date()) {
+  const pool = await freePlayPool(date);
+  const used = taken instanceof Set ? taken : new Set();
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const startIndex = Math.floor(Math.random() * pool.length);
+    let goalIndex = Math.floor(Math.random() * (pool.length - 1));
+    if (goalIndex >= startIndex) goalIndex += 1;
+    const start = pool[startIndex];
+    const goal = pool[goalIndex];
+    if (!start || !goal || sameTitle(start, goal)) continue;
+    const key = `${start}\n${goal}`;
+    if (used.has(key)) continue;
+    used.add(key);
+    return { start, goal };
+  }
+  throw new Error('pair');
 }
 
 export async function resolveStartTitle(storedStart, targetTitle, date = new Date()) {

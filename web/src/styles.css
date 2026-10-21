@@ -1317,6 +1317,7 @@ mark.page-find.is-current {
 
   .primary:active:not(:disabled),
   .secondary:active:not(:disabled),
+  .desk-button:active:not(:disabled),
   .text-button:active,
   .linkish:active,
   .target-link:active,
@@ -2428,3 +2429,118 @@ html[data-theme="dark"] .stage-home input {
     border: 1px solid var(--home-ink);
   }
 }
+
+.desk-page {
+  position: relative;
+  z-index: 2;
+  width: min(720px, calc(100% - 32px));
+  margin: auto;
+  padding-top: max(72px, calc(env(safe-area-inset-top) + 56px));
+  padding-bottom: max(48px, env(safe-area-inset-bottom));
+}
+
+.desk-page h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+}
+
+.desk-head {
+  margin-bottom: 18px;
+}
+
+.desk-page .mail-form,
+.desk-page .secondary {
+  width: min(380px, 100%);
+}
+
+.desk-page.is-gate {
+  width: min(380px, calc(100% - 32px));
+}
+
+.desk-page.is-gate h1 {
+  text-align: center;
+}
+
+.desk-list {
+  display: grid;
+  gap: 14px;
+}
+
+.desk-card {
+  margin: 0;
+  padding: 16px 16px 12px;
+  border-radius: 20px;
+  background: var(--stage-panel);
+  box-shadow: var(--stage-shadow);
+}
+
+.desk-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.desk-fields {
+  display: grid;
+  gap: 4px 12px;
+}
+
+.desk-fields input {
+  margin-bottom: 8px;
+}
+
+@media (min-width: 640px) {
+  .desk-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.desk-bot {
+  margin: 4px 0;
+  color: var(--stage-muted);
+  font-size: 0.95rem;
+}
+
+.desk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.desk-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: var(--stage-fill);
+  color: var(--stage-ink);
+  box-shadow: inset 0 0 0 1px var(--stage-line);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.desk-button.is-play {
+  background: var(--stage-action);
+  color: var(--stage-action-ink);
+  box-shadow: none;
+}
+
+.desk-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.desk-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .desk-button:hover:not(:disabled) {
+    background: var(--stage-line);
+  }
+
+  .desk-button.is-play:hover:not(:disabled) {
+    background: var(--stage-action-hover);
+  }
+}
+

@@ -1,0 +1,34 @@
+name: Publish the daily lottery
+
+on:
+  schedule:
+    # 12:00 Israel time: 09:00 UTC in summer, 10:00 UTC in winter.
+    # The script exits unless the clock in Asia/Jerusalem is at or past 12:00,
+    # so the extra run does not publish twice.
+    - cron: '0 9 * * *'
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: lottery-noon
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install web dependencies
+        run: npm ci --prefix web
+      - name: Publish today's pair and refill the queue
+        run: node web/scripts/publishLottery.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
