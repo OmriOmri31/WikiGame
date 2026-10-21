@@ -131,8 +131,9 @@ async function publishSlot(slot) {
 
 async function main() {
   const now = new Date();
-  if (israelHour(now) < 12) {
-    console.log('before noon in Israel');
+  // The winter run of the 21:00 UTC cron lands at 23:00, still before midnight.
+  if (israelHour(now) === 23) {
+    console.log('before midnight in Israel');
     return;
   }
   const today = israelDateKey(now);

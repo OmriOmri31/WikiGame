@@ -181,7 +181,9 @@ export function israelHour(date = new Date()) {
     hour: 'numeric',
     hourCycle: 'h23',
   }).formatToParts(date);
-  return Number(formatted.find((part) => part.type === 'hour')?.value) || 0;
+  const hour = Number(formatted.find((part) => part.type === 'hour')?.value);
+  if (!Number.isFinite(hour)) return 0;
+  return hour % 24;
 }
 
 export function addIsraelDays(dateKey, days) {
@@ -191,10 +193,11 @@ export function addIsraelDays(dateKey, days) {
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
 }
 
-// The pair that goes live at the next 12:00 Israel time.
+// The pair that goes live at the next midnight in Israel.
+// During the midnight hour the new day is the one being published.
 export function nextPublishDateKey(date = new Date()) {
   const today = israelDateKey(date);
-  return israelHour(date) < 12 ? today : addIsraelDays(today, 1);
+  return israelHour(date) === 0 ? today : addIsraelDays(today, 1);
 }
 
 function pageviewDateParts(date = new Date(), extraLag = 0) {

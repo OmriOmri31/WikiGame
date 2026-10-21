@@ -42,6 +42,17 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
+    const onPop = () => setScreen(deskPath() ? 'admin' : 'home');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  function openDesk() {
+    window.history.pushState(null, '', '/admin');
+    setScreen('admin');
+  }
+
+  useEffect(() => {
     if (!authReady || !user || isAdmin(user)) return;
     if (screen !== 'admin' && !deskPath()) return;
     if (!ADMIN_UID) console.warn('Set ADMIN_UID in web/src/admin.js to open the desk.');
@@ -148,6 +159,7 @@ export default function App() {
       onStart={() => beginGame({ mode: 'daily' })}
       onFreePlay={() => beginGame({ mode: 'free' })}
       onLeaderboard={() => setScreen('leaderboard')}
+      onDesk={isAdmin(user) ? openDesk : null}
     />
   );
 }

@@ -2,15 +2,15 @@ name: Publish the daily lottery
 
 on:
   schedule:
-    # 12:00 Israel time: 09:00 UTC in summer, 10:00 UTC in winter.
-    # The script exits unless the clock in Asia/Jerusalem is at or past 12:00,
-    # so the extra run does not publish twice.
-    - cron: '0 9 * * *'
-    - cron: '0 10 * * *'
+    # Midnight in Israel: 21:00 UTC while the clock is UTC+3, 22:00 UTC while it is UTC+2.
+    # In winter the 21:00 UTC run is still 23:00, and the script waits for midnight.
+    # The date key stops the later run from publishing twice.
+    - cron: '0 21 * * *'
+    - cron: '0 22 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: lottery-noon
+  group: lottery-midnight
   cancel-in-progress: false
 
 permissions:

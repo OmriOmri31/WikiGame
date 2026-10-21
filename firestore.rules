@@ -7,7 +7,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isDeskAdmin() {
       return request.auth != null
-        && request.auth.uid == 'PASTE_FIREBASE_UID';
+        && request.auth.uid == 'bsoHTJvKDiOr3qzvmL1EIHdnsji1';
     }
 
     match /lotteryQueue/{id} {

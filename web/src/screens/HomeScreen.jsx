@@ -40,7 +40,7 @@ async function loadPersonalScores(uid) {
   }
 }
 
-export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard }) {
+export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard, onDesk }) {
   const theme = useTheme();
   const [mode, setMode] = useState('sign-in');
   const [mailOpen, setMailOpen] = useState(false);
@@ -280,6 +280,11 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           <button className="text-button home-board-link" type="button" onClick={onLeaderboard}>
             טבלת שיאים יומית
           </button>
+          {onDesk ? (
+            <button className="text-button home-board-link" type="button" onClick={onDesk}>
+              ניהול המשחק
+            </button>
+          ) : null}
           <div className="home-more">
             {user ? (
               <>

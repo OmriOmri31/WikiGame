@@ -296,7 +296,7 @@ function Desk({ user, onPlay }) {
         <header className="desk-head">
           <h1>חמשת הימים הבאים</h1>
           <p className="lede">
-            בכל יום ב־12:00 המשחק הראשון מתפרסם, השאר זזים מקום אחד קדימה, ונוסף משחק חדש בסוף.
+            בכל יום בחצות המשחק הראשון מתפרסם, השאר זזים מקום אחד קדימה, ונוסף משחק חדש בסוף.
           </p>
         </header>
         {loadError ? <p className="form-error" role="alert">{loadError}</p> : null}
