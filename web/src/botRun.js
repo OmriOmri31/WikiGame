@@ -168,6 +168,7 @@ async function solveOnce() {
       pagesVisited: found.pagesVisited,
       timeTaken: found.timeTaken,
       path: found.path,
+      pathVia: Array.isArray(found.via) ? found.via : [],
       startTitle: found.path[0] || start,
       goalTitle: found.path[found.path.length - 1] || goal,
       timestamp: Timestamp.now(),

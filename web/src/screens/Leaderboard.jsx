@@ -8,7 +8,7 @@ import ThemeButton from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 import { subscribeBot } from '../botRun';
 import { isReasoner, REASONER_NAME } from '../reasonerBot';
-import { isWikiBot, WIKI_BOT_NAME } from '../wikiBot';
+import { isWikiBot, pathLinkNames, WIKI_BOT_NAME } from '../wikiBot';
 import { articleUrl, normalizeTitle } from '../wikipedia';
 
 // Firestore rules allow create but not delete, so probe scores stay hidden here.
@@ -89,7 +89,9 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, s
           {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
         </span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
-        <span className="num"><bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi></span>
+        <span className="num">
+          {isWikiBot(row) ? null : <bdi className="clock" dir="ltr">{formatDuration(row.timeTaken)}</bdi>}
+        </span>
       </div>
       <ScoreActions
         row={row}
@@ -132,17 +134,21 @@ function FreePlayRow({ row, highlighted, onShowPath, onShowFastest, onReplay, al
   );
 }
 
-function PathLine({ titles }) {
+function PathLine({ titles, vias }) {
   return (
     <p className="path-line" dir="rtl">
-      {titles.map((title, index) => (
-        <span className="path-step" key={`${title}-${index}`}>
-          {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
-          <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
-            <bdi>{title}</bdi>
-          </a>
-        </span>
-      ))}
+      {titles.map((title, index) => {
+        const via = index > 0 && Array.isArray(vias) ? (vias[index - 1] || '') : '';
+        return (
+          <span className="path-step" key={`${title}-${index}`}>
+            {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
+            {via ? <span className="path-via">הפניה: <bdi>{via}</bdi></span> : null}
+            <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
+              <bdi>{title}</bdi>
+            </a>
+          </span>
+        );
+      })}
     </p>
   );
 }
@@ -161,6 +167,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [botPhase, setBotPhase] = useState('idle');
   const [reloadToken, setReloadToken] = useState(0);
   const [pathView, setPathView] = useState(null);
+  const [hopNotes, setHopNotes] = useState(null);
   const pathDialogRef = useRef(null);
   const onHomeRef = useRef(onHome);
   onHomeRef.current = onHome;
@@ -276,6 +283,37 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [pathView]);
+
+  useEffect(() => {
+    if (!pathView) {
+      setHopNotes(null);
+      return undefined;
+    }
+    const row = pathView.row;
+    const fastest = pathView.kind === 'fastest';
+    const titles = fastest ? (fastestPath(row) || []) : savedPath(row);
+    const annotate = fastest || isWikiBot(row);
+    if (!annotate || titles.length < 2) {
+      setHopNotes([]);
+      return undefined;
+    }
+    const stored = fastest ? row.fastestVia : row.pathVia;
+    if (Array.isArray(stored) && stored.length === titles.length - 1) {
+      setHopNotes(stored.map((item) => (typeof item === 'string' ? item : '')));
+      return undefined;
+    }
+    let cancelled = false;
+    setHopNotes(null);
+    pathLinkNames(titles).then((notes) => {
+      if (!cancelled) setHopNotes(notes);
+    }).catch((error) => {
+      console.error(error);
+      if (!cancelled) setHopNotes([]);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pathView]);
 
   const highlightedId = playerScore?.id;
@@ -462,7 +500,15 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
           >
             <h2>{showingFastest ? WIKI_BOT_NAME : 'הדרך'}</h2>
             {pathTitles.length > 0 ? (
-              <PathLine titles={pathTitles} />
+              <>
+                <PathLine
+                  titles={pathTitles}
+                  vias={(showingFastest || isWikiBot(pathRow)) ? hopNotes : []}
+                />
+                {(showingFastest || isWikiBot(pathRow)) && hopNotes === null ? (
+                  <p className="status path-via-status">בודקים הפניות בדרך…</p>
+                ) : null}
+              </>
             ) : (
               <p className="lede">
                 {showingFastest ? 'לא נמצאה דרך עד 25 דפים.' : 'הדרך לא נשמרה במשחק הזה.'}

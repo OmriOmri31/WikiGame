@@ -1149,6 +1149,17 @@ mark.page-find.is-current {
   font-weight: 500;
 }
 
+.path-via {
+  color: var(--secondary-label);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.path-via-status {
+  margin: 10px 0 0;
+}
+
 .path-line a {
   color: var(--blue);
   font-weight: 600;
