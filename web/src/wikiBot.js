@@ -186,6 +186,93 @@ function stitch(meet, parentTowardStart, parentTowardGoal) {
   };
 }
 
+function articleSuggestions(data) {
+  const pages = data?.query?.pages || [];
+  return pages
+    .filter((page) => page && !page.missing && page.ns === 0 && !page.pageprops?.disambiguation && page.title)
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+    .map((page) => ({
+      title: normalizeTitle(page.title),
+      description: typeof page.description === 'string' ? page.description : '',
+    }))
+    .filter((page) => page.title);
+}
+
+export async function suggestArticles(query) {
+  const search = normalizeTitle(query);
+  if (!search || search.includes('|')) return [];
+  const prefix = wikiGet({
+    action: 'query',
+    generator: 'prefixsearch',
+    gpssearch: search,
+    gpsnamespace: '0',
+    gpslimit: '8',
+    prop: 'description|pageprops',
+    ppprop: 'disambiguation',
+    redirects: '1',
+  });
+  const broader = search.length < 2
+    ? Promise.resolve(null)
+    : wikiGet({
+      action: 'query',
+      generator: 'search',
+      gsrsearch: search,
+      gsrnamespace: '0',
+      gsrlimit: '8',
+      prop: 'description|pageprops',
+      ppprop: 'disambiguation',
+      redirects: '1',
+    });
+  const [prefixResult, searchResult] = await Promise.allSettled([prefix, broader]);
+  if (prefixResult.status === 'rejected' && searchResult.status === 'rejected') {
+    throw prefixResult.reason;
+  }
+  const merged = [];
+  const seen = new Set();
+  [
+    ...articleSuggestions(prefixResult.status === 'fulfilled' ? prefixResult.value : null),
+    ...articleSuggestions(searchResult.status === 'fulfilled' ? searchResult.value : null),
+  ].forEach((item) => {
+    if (seen.has(item.title)) return;
+    seen.add(item.title);
+    merged.push(item);
+  });
+  return merged.slice(0, 8);
+}
+
+export async function confirmedArticle(title) {
+  const search = normalizeTitle(title);
+  if (!search || search.includes('|')) {
+    const error = new Error('missing');
+    error.code = 'missingtitle';
+    throw error;
+  }
+  const data = await wikiGet({
+    action: 'query',
+    titles: search,
+    redirects: '1',
+    prop: 'pageprops',
+    ppprop: 'disambiguation',
+  });
+  const normalized = new Map();
+  (data.query?.normalized || []).forEach((row) => normalized.set(row.from, row.to));
+  const redirects = new Map();
+  (data.query?.redirects || []).forEach((row) => redirects.set(row.from, row.to));
+  const resolved = followRedirects(search, normalized, redirects);
+  const page = (data.query?.pages || []).find((item) => sameTitle(item.title, resolved));
+  if (!page || page.missing || page.ns !== 0) {
+    const error = new Error('missing');
+    error.code = 'missingtitle';
+    throw error;
+  }
+  if (page.pageprops?.disambiguation) {
+    const error = new Error('disambiguation');
+    error.code = 'disambiguation';
+    throw error;
+  }
+  return normalizeTitle(page.title);
+}
+
 export async function canonicalTitle(title) {
   const [resolved] = await resolveTitles([title], new Map());
   if (!resolved) {

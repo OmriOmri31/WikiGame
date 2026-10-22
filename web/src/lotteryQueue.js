@@ -1,7 +1,7 @@
 import { doc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from './firebase';
 import { drawDistinctPair, normalizeTitle, sameTitle } from './wikipedia.js';
-import { canonicalTitle } from './wikiBot.js';
+import { confirmedArticle } from './wikiBot.js';
 import {
   appendPairs,
   boardReady,
@@ -69,8 +69,8 @@ async function fillQueue() {
 
 export async function updateSlotTitles(index, startTitle, goalTitle) {
   const [start, goal] = await Promise.all([
-    canonicalTitle(startTitle),
-    canonicalTitle(goalTitle),
+    confirmedArticle(startTitle),
+    confirmedArticle(goalTitle),
   ]);
   if (!start || !goal) {
     const error = new Error('missing');

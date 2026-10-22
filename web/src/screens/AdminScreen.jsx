@@ -11,7 +11,7 @@ import { auth } from '../firebase';
 import Stage from '../Stage';
 import { formatDuration } from '../time';
 import { REASONER_NAME } from '../reasonerBot';
-import { WIKI_BOT_NAME } from '../wikiBot';
+import { WIKI_BOT_NAME, suggestArticles } from '../wikiBot';
 import { addIsraelDays, israelDateKey, normalizeTitle } from '../wikipedia';
 import { askDeskModel, runBfs, runReasoner } from '../lotteryBots';
 import {
@@ -34,7 +34,8 @@ function useStateRef(value) {
 }
 
 function rowError(error) {
-  if (error?.code === 'missingtitle') return 'הערך לא נמצא בוויקיפדיה.';
+  if (error?.code === 'missingtitle') return 'הערך לא נמצא בוויקיפדיה. בחרו ערך מהרשימה.';
+  if (error?.code === 'disambiguation') return 'זה דף פירושונים. בחרו ערך מהרשימה.';
   if (error?.code === 'same') return 'ההתחלה והיעד צריכים להיות ערכים שונים.';
   if (error?.code === 'permission-denied') return 'אין הרשאה לשמור. פרסמו את כללי Firestore.';
   return 'לא הצלחנו לשמור.';
@@ -46,6 +47,69 @@ function slotHeading(dateKey) {
   if (dateKey === today) return `היום · ${when}`;
   if (dateKey === addIsraelDays(today, 1)) return `מחר · ${when}`;
   return when;
+}
+
+function TitleField({
+  id,
+  label,
+  value,
+  disabled,
+  open,
+  items,
+  active,
+  loading,
+  failed,
+  onChange,
+  onKeyDown,
+  onBlur,
+  onPick,
+  onActive,
+}) {
+  const listId = `${id}-suggestions`;
+  const activeId = open && items[active] ? `${id}-option-${active}` : undefined;
+  return (
+    <div className="desk-field">
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={activeId}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
+      />
+      {open ? (
+        <ul className="desk-suggest" id={listId} role="listbox">
+          {loading && items.length === 0 ? <li className="desk-suggest-note">מחפש…</li> : null}
+          {failed && items.length === 0 ? <li className="desk-suggest-note">לא הצלחנו לחפש.</li> : null}
+          {!loading && !failed && items.length === 0 ? <li className="desk-suggest-note">אין ערך כזה.</li> : null}
+          {items.map((item, itemIndex) => (
+            <li key={item.title} role="presentation">
+              <button
+                id={`${id}-option-${itemIndex}`}
+                className={itemIndex === active ? 'is-active' : ''}
+                type="button"
+                role="option"
+                aria-selected={itemIndex === active}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => onActive(itemIndex)}
+                onClick={() => onPick(item.title)}
+              >
+                <span>{item.title}</span>
+                {item.description ? <small>{item.description}</small> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 function botLine(result, running) {
@@ -164,6 +228,11 @@ function Desk({ user, onPlay }) {
   const draftsRef = useStateRef(drafts);
   const saveChain = useRef(Promise.resolve());
   const runningRef = useRef(new Set());
+  const suggestTimer = useRef(0);
+  const suggestGen = useRef(0);
+  const [suggest, setSuggest] = useState(null);
+
+  useEffect(() => () => window.clearTimeout(suggestTimer.current), []);
 
   useEffect(() => {
     let live = true;
@@ -199,6 +268,41 @@ function Desk({ user, onPlay }) {
     setRowErrors((current) => ({ ...current, [index]: '' }));
   }
 
+  function editTitle(index, field, value) {
+    setDraft(index, field, value);
+    const key = draftKey(index, field);
+    const query = normalizeTitle(value);
+    window.clearTimeout(suggestTimer.current);
+    if (!query) {
+      suggestGen.current += 1;
+      setSuggest(null);
+      return;
+    }
+    const generation = suggestGen.current + 1;
+    suggestGen.current = generation;
+    setSuggest({ key, items: [], active: 0, loading: true, failed: false });
+    suggestTimer.current = window.setTimeout(async () => {
+      try {
+        const items = await suggestArticles(query);
+        if (suggestGen.current !== generation) return;
+        setSuggest({ key, items, active: 0, loading: false, failed: false });
+      } catch (error) {
+        console.error(error);
+        if (suggestGen.current !== generation) return;
+        setSuggest({ key, items: [], active: 0, loading: false, failed: true });
+      }
+    }, 150);
+  }
+
+  function moveSuggestion(delta) {
+    setSuggest((current) => {
+      if (!current || current.items.length === 0) return current;
+      const count = current.items.length;
+      const active = (current.active + delta + count) % count;
+      return { ...current, active };
+    });
+  }
+
   function clearDrafts(index) {
     setDrafts((current) => {
       const next = { ...current };
@@ -208,23 +312,24 @@ function Desk({ user, onPlay }) {
     });
   }
 
-  function commit(index) {
-    const run = () => commitNow(index);
+  function commit(index, overrides) {
+    const run = () => commitNow(index, overrides);
     const job = saveChain.current.then(run, run);
     saveChain.current = job.then(() => {}, () => {});
     return job;
   }
 
-  async function commitNow(index) {
+  async function commitNow(index, overrides = {}) {
     const slot = boardRef.current?.slots?.[index];
     if (!slot) return null;
-    const start = normalizeTitle(fieldValue(index, 'startTitle', slot, draftsRef.current));
-    const goal = normalizeTitle(fieldValue(index, 'goalTitle', slot, draftsRef.current));
+    const start = normalizeTitle(overrides.startTitle ?? fieldValue(index, 'startTitle', slot, draftsRef.current));
+    const goal = normalizeTitle(overrides.goalTitle ?? fieldValue(index, 'goalTitle', slot, draftsRef.current));
     if (!titlesChanged(slot, start, goal)) {
       clearDrafts(index);
       return { start: slot.startTitle, goal: slot.goalTitle };
     }
     if (!start || !goal) {
+      clearDrafts(index);
       setRowErrors((current) => ({ ...current, [index]: 'יש למלא התחלה ויעד.' }));
       return null;
     }
@@ -234,9 +339,18 @@ function Desk({ user, onPlay }) {
       return saved;
     } catch (error) {
       console.error(error);
+      clearDrafts(index);
       setRowErrors((current) => ({ ...current, [index]: rowError(error) }));
       return null;
     }
+  }
+
+  function pickTitle(index, field, title) {
+    suggestGen.current += 1;
+    window.clearTimeout(suggestTimer.current);
+    setSuggest(null);
+    setDraft(index, field, title);
+    commit(index, { [field]: title });
   }
 
   async function refresh(index) {
@@ -311,28 +425,53 @@ function Desk({ user, onPlay }) {
               <section className="desk-card" key={`${slot.dateKey}-${index}`} aria-label={slotHeading(slot.dateKey)}>
                 <h2>{slotHeading(slot.dateKey)}</h2>
                 <div className="desk-fields">
-                  <div>
-                    <label htmlFor={`start-${index}`}>התחלה</label>
-                    <input
-                      id={`start-${index}`}
-                      value={start}
-                      disabled={busy}
-                      autoComplete="off"
-                      onChange={(event) => setDraft(index, 'startTitle', event.target.value)}
-                      onBlur={() => commit(index)}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor={`goal-${index}`}>יעד</label>
-                    <input
-                      id={`goal-${index}`}
-                      value={goal}
-                      disabled={busy}
-                      autoComplete="off"
-                      onChange={(event) => setDraft(index, 'goalTitle', event.target.value)}
-                      onBlur={() => commit(index)}
-                    />
-                  </div>
+                  {['startTitle', 'goalTitle'].map((field) => {
+                    const key = draftKey(index, field);
+                    const menu = suggest?.key === key ? suggest : null;
+                    return (
+                      <TitleField
+                        key={field}
+                        id={`${field}-${index}`}
+                        label={field === 'startTitle' ? 'התחלה' : 'יעד'}
+                        value={field === 'startTitle' ? start : goal}
+                        disabled={busy}
+                        open={Boolean(menu)}
+                        items={menu?.items || []}
+                        active={menu?.active || 0}
+                        loading={Boolean(menu?.loading)}
+                        failed={Boolean(menu?.failed)}
+                        onChange={(value) => editTitle(index, field, value)}
+                        onPick={(title) => pickTitle(index, field, title)}
+                        onActive={(itemIndex) => {
+                          setSuggest((current) => (
+                            current && current.key === key
+                              ? { ...current, active: itemIndex }
+                              : current
+                          ));
+                        }}
+                        onBlur={() => {
+                          if (suggest?.key === key) setSuggest(null);
+                          commit(index);
+                        }}
+                        onKeyDown={(event) => {
+                          if (suggest?.key !== key) return;
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            moveSuggestion(1);
+                          } else if (event.key === 'ArrowUp') {
+                            event.preventDefault();
+                            moveSuggestion(-1);
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setSuggest(null);
+                          } else if (event.key === 'Enter' && suggest.items[suggest.active]) {
+                            event.preventDefault();
+                            pickTitle(index, field, suggest.items[suggest.active].title);
+                          }
+                        }}
+                      />
+                    );
+                  })}
                 </div>
                 <p className="desk-bot">{WIKI_BOT_NAME}: {botLine(slot.bfs, running?.bfs)}</p>
                 <p className="desk-bot">{REASONER_NAME}: {botLine(slot.reasoner, running?.reasoner)}</p>

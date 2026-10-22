@@ -2484,8 +2484,66 @@ html[data-theme="dark"] .stage-home input {
   gap: 4px 12px;
 }
 
-.desk-fields input {
+.desk-field {
+  position: relative;
+  min-width: 0;
   margin-bottom: 8px;
+}
+
+.desk-fields input {
+  margin-bottom: 0;
+}
+
+.desk-card:has(.desk-suggest) {
+  position: relative;
+  z-index: 3;
+}
+
+.desk-suggest {
+  position: absolute;
+  z-index: 4;
+  inset-inline: 0;
+  top: calc(100% - 4px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 14px;
+  background: var(--stage-panel-solid);
+  box-shadow: var(--stage-shadow);
+  max-height: 240px;
+  overflow: auto;
+}
+
+.desk-suggest button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--stage-ink);
+  text-align: start;
+  cursor: pointer;
+}
+
+.desk-suggest button small {
+  color: var(--stage-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.desk-suggest button.is-active,
+.desk-suggest button:hover {
+  background: var(--stage-fill);
+}
+
+.desk-suggest-note {
+  padding: 8px 10px;
+  color: var(--stage-muted);
 }
 
 @media (min-width: 640px) {
