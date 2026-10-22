@@ -42,7 +42,13 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
-    const onPop = () => setScreen(deskPath() ? 'admin' : 'home');
+    const onPop = () => {
+      setScreen((current) => {
+        if (deskPath()) return 'admin';
+        if (current === 'admin') return 'home';
+        return current;
+      });
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);

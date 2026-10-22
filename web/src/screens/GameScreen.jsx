@@ -22,6 +22,25 @@ import {
 
 const SECRET_CODE = 'Coys31';
 
+function scrollToHash(hash) {
+  const raw = String(hash || '').replace(/^#/, '');
+  if (!raw) return false;
+  const ids = [raw];
+  try {
+    const decoded = decodeURIComponent(raw.replace(/\+/g, '%20'));
+    if (!ids.includes(decoded)) ids.push(decoded);
+  } catch {
+    // Keep the raw fragment when it is not valid percent-encoding.
+  }
+  for (const id of ids) {
+    const target = document.getElementById(id);
+    if (!target) continue;
+    target.scrollIntoView({ block: 'start' });
+    return true;
+  }
+  return false;
+}
+
 function loadErrorMessage(mode, pair) {
   if (pair?.startTitle) return 'לא ניתן לטעון את הערכים האלה.';
   if (mode === 'free') return 'לא ניתן לטעון משחק חופשי.';
@@ -285,14 +304,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     document.title = `${article.title} – משחק הוויקיפדיה`;
     const hash = pendingHashRef.current;
     pendingHashRef.current = '';
-    if (hash) {
-      const id = hash.slice(1);
-      const target = document.getElementById(id);
-      if (target) {
-        target.scrollIntoView({ block: 'start' });
-        return undefined;
-      }
-    }
+    if (hash && scrollToHash(hash)) return undefined;
     scrollRef.current?.scrollTo(0, 0);
     return undefined;
   }, [article]);
@@ -538,10 +550,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   async function openArticle(title, hash = '') {
     if (finishedRef.current || loadingRef.current) return;
     if (sameTitle(title, currentTitleRef.current)) {
-      if (hash) {
-        const id = hash.slice(1);
-        document.getElementById(id)?.scrollIntoView({ block: 'start' });
-      }
+      if (hash) scrollToHash(hash);
       return;
     }
 
@@ -582,7 +591,11 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     const anchor = event.target.closest('a');
     if (!anchor) return;
     const href = anchor.getAttribute('href') || '';
-    if (href.startsWith('#')) return;
+    if (href.startsWith('#')) {
+      event.preventDefault();
+      scrollToHash(href);
+      return;
+    }
 
     event.preventDefault();
     const parsed = titleFromHref(href);
