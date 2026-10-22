@@ -12,7 +12,7 @@ import Stage from '../Stage';
 import { formatDuration } from '../time';
 import { REASONER_NAME } from '../reasonerBot';
 import { WIKI_BOT_NAME, suggestArticles } from '../wikiBot';
-import { addIsraelDays, israelDateKey, normalizeTitle } from '../wikipedia';
+import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
 import { askDeskModel, runBfs, runReasoner } from '../lotteryBots';
 import {
   ensureQueue,
@@ -109,6 +109,30 @@ function TitleField({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+function DeskPath({ result }) {
+  const titles = Array.isArray(result?.path)
+    ? result.path.map((title) => normalizeTitle(title)).filter(Boolean)
+    : [];
+  if (titles.length === 0) return null;
+  const vias = Array.isArray(result.pathVia) ? result.pathVia : [];
+  return (
+    <p className="path-line desk-path" dir="rtl">
+      {titles.map((title, index) => {
+        const via = index > 0 ? (vias[index - 1] || '') : '';
+        return (
+          <span className="path-step" key={`${title}-${index}`}>
+            {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
+            {via ? <span className="path-via">הפניה: <bdi>{via}</bdi></span> : null}
+            <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
+              <bdi>{title}</bdi>
+            </a>
+          </span>
+        );
+      })}
+    </p>
   );
 }
 
@@ -474,7 +498,9 @@ function Desk({ user, onPlay }) {
                   })}
                 </div>
                 <p className="desk-bot">{WIKI_BOT_NAME}: {botLine(slot.bfs, running?.bfs)}</p>
+                <DeskPath result={running?.bfs ? null : slot.bfs} />
                 <p className="desk-bot">{REASONER_NAME}: {botLine(slot.reasoner, running?.reasoner)}</p>
+                <DeskPath result={running?.reasoner ? null : slot.reasoner} />
                 {rowErrors[index] ? <p className="form-error" role="alert">{rowErrors[index]}</p> : null}
                 <div className="desk-actions">
                   <button

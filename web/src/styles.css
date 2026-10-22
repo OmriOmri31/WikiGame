@@ -2558,6 +2558,10 @@ html[data-theme="dark"] .stage-home input {
   font-size: 0.95rem;
 }
 
+.desk-path {
+  margin: 0 0 10px;
+}
+
 .desk-actions {
   display: flex;
   flex-wrap: wrap;
