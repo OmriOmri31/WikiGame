@@ -4,6 +4,7 @@ import { accountName } from '../account';
 import { db } from '../firebase';
 import { saveLocalScore } from '../localScores';
 import { exitFullscreen } from '../fullscreen';
+import { clearGameSession, saveGameSession } from '../gameSession';
 import GameMenu from '../GameMenu';
 import GameTools, { FindBar } from '../GameTools';
 import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
@@ -47,7 +48,7 @@ function loadErrorMessage(mode, pair) {
   return 'לא ניתן לטעון את המאמרים היומיים.';
 }
 
-export default function GameScreen({ user, mode = 'daily', pair = null, onFinish, onExit }) {
+export default function GameScreen({ user, mode = 'daily', pair = null, resume = null, onFinish, onExit }) {
   const [startTitle, setStartTitle] = useState('');
   const [goalTitle, setGoalTitle] = useState('');
   const [article, setArticle] = useState(null);
@@ -58,6 +59,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const [elapsed, setElapsed] = useState(0);
   const [finalTime, setFinalTime] = useState(null);
   const [running, setRunning] = useState(false);
+  const [clockOn, setClockOn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -77,7 +79,9 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const [findCapped, setFindCapped] = useState(false);
 
   const pagesRef = useRef(1);
-  const startRef = useRef(0);
+  const elapsedBaseRef = useRef(0);
+  const clockSinceRef = useRef(0);
+  const runningRef = useRef(false);
   const pathRef = useRef([]);
   const startTitleRef = useRef('');
   const currentTitleRef = useRef('');
@@ -98,8 +102,80 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   const rangesRef = useRef([]);
   const findIndexRef = useRef(0);
   const onFinishRef = useRef(onFinish);
+  const goalOpenRef = useRef(false);
+  const pendingScrollRef = useRef(0);
+  const resumeRef = useRef(resume);
+  const modeRef = useRef(mode);
   onFinishRef.current = onFinish;
   searchOpenRef.current = searchOpen;
+  goalOpenRef.current = goalOpen;
+  modeRef.current = mode;
+
+  function readElapsed() {
+    const live = clockSinceRef.current ? (Date.now() - clockSinceRef.current) / 1000 : 0;
+    return elapsedBaseRef.current + live;
+  }
+
+  function persistSession() {
+    if (finishedRef.current || modeRef.current === 'preview') return;
+    if (!startTitleRef.current || !goalTitleRef.current || !currentTitleRef.current) return;
+    if (!pathRef.current.length) return;
+    saveGameSession({
+      mode: modeRef.current === 'free' ? 'free' : 'daily',
+      startTitle: startTitleRef.current,
+      goalTitle: goalTitleRef.current,
+      currentTitle: currentTitleRef.current,
+      path: pathRef.current.slice(),
+      pages: pagesRef.current,
+      backUses: backUsesRef.current,
+      elapsedMs: Math.max(0, Math.round(readElapsed() * 1000)),
+      scrollTop: scrollRef.current?.scrollTop || 0,
+      goalOpen: goalOpenRef.current,
+    });
+  }
+
+  function stopClock() {
+    if (clockSinceRef.current) {
+      elapsedBaseRef.current += (Date.now() - clockSinceRef.current) / 1000;
+      clockSinceRef.current = 0;
+    }
+    runningRef.current = false;
+    setClockOn(false);
+    setRunning(false);
+    setElapsed(elapsedBaseRef.current);
+    return elapsedBaseRef.current;
+  }
+
+  function startClock(elapsedSeconds) {
+    elapsedBaseRef.current = elapsedSeconds;
+    const hidden = document.visibilityState === 'hidden';
+    clockSinceRef.current = hidden ? 0 : Date.now();
+    runningRef.current = true;
+    setElapsed(elapsedSeconds);
+    setClockOn(!hidden);
+    setRunning(true);
+  }
+
+  function freezeClock() {
+    if (!runningRef.current || finishedRef.current) {
+      persistSession();
+      return;
+    }
+    if (clockSinceRef.current) {
+      elapsedBaseRef.current += (Date.now() - clockSinceRef.current) / 1000;
+      clockSinceRef.current = 0;
+      setElapsed(elapsedBaseRef.current);
+    }
+    setClockOn(false);
+    persistSession();
+  }
+
+  function thawClock() {
+    if (!runningRef.current || finishedRef.current) return;
+    if (document.visibilityState === 'hidden') return;
+    if (!clockSinceRef.current) clockSinceRef.current = Date.now();
+    setClockOn(true);
+  }
   const fixedStart = pair?.startTitle || '';
   const fixedGoal = pair?.goalTitle || '';
 
@@ -171,6 +247,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     setArticle(entry.article);
     setArticleHtml(entry.html);
     closeSearchIfOtherPage(entry.article.title);
+    persistSession();
   }
 
   async function goBack() {
@@ -254,26 +331,43 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
         ]);
         if (cancelled) return;
 
+        const snapshot = resumeRef.current;
+        let playingArticle = startArticle;
+        let playingHtml = startHtml;
+        if (snapshot && !sameTitle(snapshot.currentTitle, startArticle.title)) {
+          playingArticle = await fetchArticle(snapshot.currentTitle);
+          if (cancelled) return;
+          playingHtml = await prepareArticleHtml(playingArticle.html);
+          if (cancelled) return;
+        }
+        const path = snapshot?.path?.length ? snapshot.path.slice() : [startArticle.title];
+        path[path.length - 1] = playingArticle.title;
+
         lockedPairRef.current = {
           start: startArticle.title,
           goal: targetArticle.title,
         };
         goalTitleRef.current = targetArticle.title;
-        currentTitleRef.current = startArticle.title;
+        currentTitleRef.current = playingArticle.title;
         startTitleRef.current = startArticle.title;
-        pathRef.current = [startArticle.title];
-        pagesRef.current = 1;
-        cacheRef.current = new Map([[startArticle.title, { article: startArticle, html: startHtml }]]);
-        setPages(1);
+        pathRef.current = path;
+        pagesRef.current = path.length;
+        backUsesRef.current = snapshot ? snapshot.backUses : 3;
+        cacheRef.current = new Map([[playingArticle.title, { article: playingArticle, html: playingHtml }]]);
+        pendingScrollRef.current = snapshot?.scrollTop || 0;
+        goalOpenRef.current = Boolean(snapshot?.goalOpen);
+        resumeRef.current = null;
+        setPages(path.length);
+        setBackUses(backUsesRef.current);
         setStartTitle(startArticle.title);
         setGoalTitle(targetArticle.title);
         setGoalArticle(targetArticle);
         setGoalHtml(targetHtml);
-        setArticle(startArticle);
-        setArticleHtml(startHtml);
-        startRef.current = Date.now();
-        setElapsed(0);
-        setRunning(true);
+        setGoalOpen(goalOpenRef.current);
+        setArticle(playingArticle);
+        setArticleHtml(playingHtml);
+        startClock((snapshot?.elapsedMs || 0) / 1000);
+        persistSession();
       } catch (error) {
         console.error(error);
         if (!cancelled) setFatal(loadErrorMessage(mode, fixedStart ? { startTitle: fixedStart } : null));
@@ -292,18 +386,47 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   }, [attempt, mode, fixedStart, fixedGoal]);
 
   useEffect(() => {
-    if (!running) return undefined;
-    const id = window.setInterval(() => {
-      setElapsed((Date.now() - startRef.current) / 1000);
-    }, 50);
-    return () => window.clearInterval(id);
-  }, [running]);
+    if (!running || !clockOn) return undefined;
+    const tick = window.setInterval(() => setElapsed(readElapsed()), 50);
+    const save = window.setInterval(() => persistSession(), 1000);
+    return () => {
+      window.clearInterval(tick);
+      window.clearInterval(save);
+    };
+  }, [running, clockOn]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') freezeClock();
+      else thawClock();
+    };
+    window.addEventListener('pagehide', freezeClock);
+    window.addEventListener('pageshow', thawClock);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', freezeClock);
+      window.removeEventListener('pageshow', thawClock);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (!article) return undefined;
     document.title = `${article.title} – משחק הוויקיפדיה`;
     const hash = pendingHashRef.current;
     pendingHashRef.current = '';
+    const top = pendingScrollRef.current;
+    pendingScrollRef.current = 0;
+    if (top > 0) {
+      const apply = () => scrollRef.current?.scrollTo(0, top);
+      apply();
+      const frame = window.requestAnimationFrame(apply);
+      const timer = window.setTimeout(apply, 400);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.clearTimeout(timer);
+      };
+    }
     if (hash && scrollToHash(hash)) return undefined;
     scrollRef.current?.scrollTo(0, 0);
     return undefined;
@@ -418,12 +541,12 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   async function completeGame(pageCount) {
     if (finishedRef.current) return;
     finishedRef.current = true;
-    setRunning(false);
+    clearGameSession();
     searchOpenRef.current = false;
     setSearchOpen(false);
     exitFullscreen();
     const shownAt = Date.now();
-    const timeTaken = Number(((shownAt - startRef.current) / 1000).toFixed(3));
+    const timeTaken = Number(stopClock().toFixed(3));
     setFinalTime(timeTaken);
     setCongratsOpen(true);
 
@@ -478,14 +601,23 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
     runRef.current += 1;
     loadingRef.current = true;
     finishedRef.current = false;
+    resumeRef.current = null;
+    elapsedBaseRef.current = 0;
+    clockSinceRef.current = 0;
+    runningRef.current = false;
     pagesRef.current = 1;
+    backUsesRef.current = 3;
+    goalOpenRef.current = false;
     if (lockedPairRef.current) {
       currentTitleRef.current = lockedPairRef.current.start;
+      startTitleRef.current = lockedPairRef.current.start;
       pathRef.current = [lockedPairRef.current.start];
     }
+    persistSession();
     setPages(1);
     setElapsed(0);
     setFinalTime(null);
+    setClockOn(false);
     setRunning(false);
     setGoalOpen(false);
     setSecretOpen(false);
@@ -513,15 +645,17 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
   async function giveUp() {
     if (finishedRef.current) return;
     finishedRef.current = true;
+    clearGameSession();
     runRef.current += 1;
     loadingRef.current = false;
     exitFullscreen();
     if (mode !== 'free') {
+      stopClock();
       onExit();
       return;
     }
 
-    const timeTaken = Number(((Date.now() - startRef.current) / 1000).toFixed(3));
+    const timeTaken = Number(stopClock().toFixed(3));
     const fastest = await shortestFreePath();
     try {
       const saved = await storeScore({
@@ -575,7 +709,9 @@ export default function GameScreen({ user, mode = 'daily', pair = null, onFinish
 
       if (sameTitle(next.title, goalTitleRef.current)) {
         await completeGame(count);
+        return;
       }
+      persistSession();
     } catch (error) {
       console.error(error);
       showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');

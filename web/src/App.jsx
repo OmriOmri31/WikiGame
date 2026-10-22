@@ -5,6 +5,7 @@ import { startDailyBot } from './botRun';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
 import { exitFullscreen } from './fullscreen';
+import { clearGameSession, loadGameSession } from './gameSession';
 import Stage from './Stage';
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -16,16 +17,32 @@ function deskPath() {
   return window.location.pathname === '/admin';
 }
 
+function resumedMatch(session) {
+  if (!session) return { mode: 'daily', pair: null, id: 0, resume: null };
+  return {
+    mode: session.mode,
+    pair: { startTitle: session.startTitle, goalTitle: session.goalTitle },
+    id: 1,
+    resume: session,
+  };
+}
+
 export default function App() {
-  const [screen, setScreen] = useState(() => (deskPath() ? 'admin' : 'splash'));
+  const [screen, setScreen] = useState(() => {
+    if (deskPath()) return 'admin';
+    return loadGameSession() ? 'game' : 'splash';
+  });
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [authNotice, setAuthNotice] = useState('');
   const [result, setResult] = useState(null);
-  const [match, setMatch] = useState({ mode: 'daily', pair: null, id: 0 });
+  const [match, setMatch] = useState(() => (
+    deskPath() ? { mode: 'daily', pair: null, id: 0, resume: null } : resumedMatch(loadGameSession())
+  ));
   const showHome = useCallback(() => setScreen('home'), []);
 
   function beginGame(next) {
+    clearGameSession();
     const nextPair = next.pair?.startTitle && next.pair?.goalTitle ? next.pair : null;
     const mode = next.mode === 'free' || next.mode === 'preview' ? next.mode : 'daily';
     setResult(null);
@@ -33,6 +50,7 @@ export default function App() {
       mode,
       pair: nextPair,
       id: Date.now(),
+      resume: null,
     });
     setScreen('game');
   }
@@ -108,6 +126,7 @@ export default function App() {
         user={user}
         mode={match.mode}
         pair={match.pair}
+        resume={match.resume}
         onFinish={(score) => {
           if (match.mode === 'preview') {
             setScreen('admin');
