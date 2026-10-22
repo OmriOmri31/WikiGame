@@ -49,6 +49,30 @@ function slotHeading(dateKey) {
   return when;
 }
 
+function DeskBack({ onBack }) {
+  return (
+    <button className="desk-back" type="button" aria-label="חזרה למשחק" onClick={onBack}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M19 12H6.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M11.2 6.4 5.5 12l5.7 5.6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
 function TitleField({
   id,
   label,
@@ -64,12 +88,24 @@ function TitleField({
   onBlur,
   onPick,
   onActive,
+  article,
 }) {
   const listId = `${id}-suggestions`;
   const activeId = open && items[active] ? `${id}-option-${active}` : undefined;
+  const saved = normalizeTitle(article);
   return (
     <div className="desk-field">
       <label htmlFor={id}>{label}</label>
+      {saved ? (
+        <a
+          className="desk-article"
+          href={articleUrl(saved)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <bdi>{saved}</bdi>
+        </a>
+      ) : null}
       <input
         id={id}
         role="combobox"
@@ -149,7 +185,7 @@ function botLine(result, running) {
   return `${pages} · ${time}`;
 }
 
-function DeskSignIn() {
+function DeskSignIn({ onBack }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -206,6 +242,7 @@ function DeskSignIn() {
 
   return (
     <Stage className="stage-home">
+      <DeskBack onBack={onBack} />
       <main className="desk-page is-gate">
         <h1>כניסה</h1>
         <form className="mail-form" onSubmit={submit} noValidate>
@@ -244,7 +281,7 @@ function DeskSignIn() {
   );
 }
 
-function Desk({ user, onPlay }) {
+function Desk({ user, onPlay, onBack }) {
   const [board, setBoard] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [drafts, setDrafts] = useState({});
@@ -435,6 +472,7 @@ function Desk({ user, onPlay }) {
 
   return (
     <Stage>
+      <DeskBack onBack={onBack} />
       <main className="desk-page">
         <header className="desk-head">
           <h1>חמשת הימים הבאים</h1>
@@ -463,6 +501,7 @@ function Desk({ user, onPlay }) {
                         id={`${field}-${index}`}
                         label={field === 'startTitle' ? 'התחלה' : 'יעד'}
                         value={field === 'startTitle' ? start : goal}
+                        article={field === 'startTitle' ? slot.startTitle : slot.goalTitle}
                         disabled={busy}
                         open={Boolean(menu)}
                         items={menu?.items || []}
@@ -556,7 +595,7 @@ function Desk({ user, onPlay }) {
   );
 }
 
-export default function AdminScreen({ user, onPlay }) {
-  if (!user) return <DeskSignIn />;
-  return <Desk user={user} onPlay={onPlay} />;
+export default function AdminScreen({ user, onPlay, onBack }) {
+  if (!user) return <DeskSignIn onBack={onBack} />;
+  return <Desk user={user} onPlay={onPlay} onBack={onBack} />;
 }

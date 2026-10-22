@@ -54,8 +54,17 @@ export default function App() {
   }, []);
 
   function openDesk() {
-    window.history.pushState(null, '', '/admin');
+    window.history.pushState({ desk: true }, '', '/admin');
     setScreen('admin');
+  }
+
+  function closeDesk() {
+    if (window.history.state?.desk) {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState(null, '', '/');
+    setScreen('home');
   }
 
   useEffect(() => {
@@ -144,6 +153,7 @@ export default function App() {
       <AdminScreen
         user={user}
         onPlay={(pair) => beginGame({ mode: 'preview', pair })}
+        onBack={closeDesk}
       />
     );
   }
