@@ -112,10 +112,13 @@ function TitleField({
   );
 }
 
+function pathTitles(result) {
+  if (!Array.isArray(result?.path)) return [];
+  return result.path.map((title) => normalizeTitle(title)).filter(Boolean);
+}
+
 function DeskPath({ result }) {
-  const titles = Array.isArray(result?.path)
-    ? result.path.map((title) => normalizeTitle(title)).filter(Boolean)
-    : [];
+  const titles = pathTitles(result);
   if (titles.length === 0) return null;
   const vias = Array.isArray(result.pathVia) ? result.pathVia : [];
   return (
@@ -255,6 +258,7 @@ function Desk({ user, onPlay }) {
   const suggestTimer = useRef(0);
   const suggestGen = useRef(0);
   const [suggest, setSuggest] = useState(null);
+  const [openPaths, setOpenPaths] = useState({});
 
   useEffect(() => () => window.clearTimeout(suggestTimer.current), []);
 
@@ -380,6 +384,7 @@ function Desk({ user, onPlay }) {
   async function refresh(index) {
     if (runningRef.current.has(index)) return;
     runningRef.current.add(index);
+    setOpenPaths((current) => ({ ...current, [`${index}:bfs`]: false, [`${index}:reasoner`]: false }));
     setRuns((current) => ({ ...current, [index]: { bfs: true, reasoner: true } }));
     try {
       const saved = await commit(index);
@@ -497,10 +502,29 @@ function Desk({ user, onPlay }) {
                     );
                   })}
                 </div>
-                <p className="desk-bot">{WIKI_BOT_NAME}: {botLine(slot.bfs, running?.bfs)}</p>
-                <DeskPath result={running?.bfs ? null : slot.bfs} />
-                <p className="desk-bot">{REASONER_NAME}: {botLine(slot.reasoner, running?.reasoner)}</p>
-                <DeskPath result={running?.reasoner ? null : slot.reasoner} />
+                {[['bfs', WIKI_BOT_NAME, slot.bfs], ['reasoner', REASONER_NAME, slot.reasoner]].map(([key, name, result]) => {
+                  const pathKey = `${index}:${key}`;
+                  const open = Boolean(openPaths[pathKey]);
+                  const available = !running?.[key] && pathTitles(result).length > 0;
+                  return (
+                    <div key={key}>
+                      <div className="desk-bot-row">
+                        <p className="desk-bot">{name}: {botLine(result, running?.[key])}</p>
+                        {available ? (
+                          <button
+                            className="text-button compact"
+                            type="button"
+                            aria-expanded={open}
+                            onClick={() => setOpenPaths((current) => ({ ...current, [pathKey]: !current[pathKey] }))}
+                          >
+                            {open ? 'הסתר דרך' : 'הדרך'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {open && available ? <DeskPath result={result} /> : null}
+                    </div>
+                  );
+                })}
                 {rowErrors[index] ? <p className="form-error" role="alert">{rowErrors[index]}</p> : null}
                 <div className="desk-actions">
                   <button

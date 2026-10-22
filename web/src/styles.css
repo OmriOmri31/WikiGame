@@ -2552,6 +2552,13 @@ html[data-theme="dark"] .stage-home input {
   }
 }
 
+.desk-bot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .desk-bot {
   margin: 4px 0;
   color: var(--stage-muted);
