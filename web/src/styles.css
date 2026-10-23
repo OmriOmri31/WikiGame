@@ -1169,7 +1169,7 @@ body:has(.intro-card) {
   grid-template-columns: minmax(0, 1fr) 4.5rem 13ch;
 }
 
-.free-board { margin-top: 28px; }
+.free-board { margin-top: 0; }
 
 .score-actions {
   display: flex;
@@ -1328,6 +1328,12 @@ body:has(.intro-card) {
   color: var(--secondary-label);
   letter-spacing: 0.4em;
   line-height: 1;
+}
+
+.score-table .dots {
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--separator);
 }
 
 .outside-top {
@@ -2217,6 +2223,11 @@ body:has(.stage) { background: #e7f0fb; }
   background: color-mix(in srgb, var(--stage-accent) 14%, transparent);
 }
 
+.stage .score-table .dots {
+  border-bottom-color: var(--stage-line);
+  color: var(--stage-muted);
+}
+
 .stage .num.is-medal {
   font-weight: 700;
   color: var(--stage-accent);
@@ -2373,13 +2384,7 @@ body:has(.stage) { background: #e7f0fb; }
 @media (min-width: 1080px) {
   .proof { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
-  .board-columns {
-    grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
-    gap: 28px;
-    align-items: start;
-  }
-
-  .free-board { margin-top: 0; }
+  .board-columns { grid-template-columns: minmax(0, 1fr); }
 }
 
 html[data-theme="dark"] .stage {

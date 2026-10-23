@@ -1,6 +1,8 @@
-// The daily board shows at most ten ranked players. The signed-in player and
-// the best official bot stay visible when they fall outside that ten, with a
-// gap marker wherever ranks were skipped.
+// The daily board shows the top ten. Outside that ten, the signed-in player's
+// best score stays visible with the rank above it and the rank below it. Another
+// score of theirs, such as the one in the personal box, is shown the same way.
+// The best official bot stays visible on its own. A gap marker stands in for
+// skipped ranks.
 
 export function rankOf(rows, id) {
   if (!id) return null;
@@ -8,20 +10,37 @@ export function rankOf(rows, id) {
   return index === -1 ? null : index + 1;
 }
 
-export function topAndPins(ranked, { player = null, bot = null } = {}) {
+export function topAndPins(ranked, { player = null, bot = null, extra = null } = {}) {
   const top = ranked.slice(0, 10);
   const shown = new Set(top.map((row) => row.id));
   const extras = [];
 
   function pin(row, highlighted) {
-    if (!row || shown.has(row.id)) return;
+    if (!row) return;
     const rank = rankOf(ranked, row.id);
     if (!rank || rank <= top.length) return;
-    shown.add(row.id);
-    extras.push({ row, rank, highlighted });
+    if (shown.has(row.id)) {
+      if (!highlighted) return;
+      const existing = extras.find((item) => item.row.id === row.id);
+      if (existing) existing.highlighted = true;
+      return;
+    }
+    const start = highlighted ? Math.max(top.length + 1, rank - 1) : rank;
+    const end = highlighted ? Math.min(ranked.length, rank + 1) : rank;
+    for (let place = start; place <= end; place += 1) {
+      const entry = ranked[place - 1];
+      if (!entry || shown.has(entry.id)) continue;
+      shown.add(entry.id);
+      extras.push({
+        row: entry,
+        rank: place,
+        highlighted: highlighted && entry.id === row.id,
+      });
+    }
   }
 
   pin(player, true);
+  if (extra && extra.id !== player?.id) pin(extra, true);
   pin(bot, false);
   extras.sort((a, b) => a.rank - b.rank);
 

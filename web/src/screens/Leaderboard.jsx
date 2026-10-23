@@ -32,6 +32,11 @@ function latestForUser(rows, uid) {
   }, null);
 }
 
+function bestForUser(rows, uid) {
+  if (!uid) return null;
+  return rows.find((row) => row.uid === uid) || null;
+}
+
 function savedPath(row) {
   if (!Array.isArray(row?.path)) return [];
   return row.path.map((title) => normalizeTitle(title)).filter(Boolean);
@@ -97,10 +102,10 @@ function OfficialMark() {
   );
 }
 
-function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, showPath }) {
+function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, showPath, anchor = true }) {
   return (
     <div
-      id={`score-${row.id}`}
+      id={anchor ? `score-${row.id}` : undefined}
       className={['score-row', highlighted ? 'is-player' : '', isWikiBot(row) ? 'is-fastest' : '', isReasoner(row) ? 'is-reasoner' : ''].filter(Boolean).join(' ')}
     >
       <div className="score-main">
@@ -183,6 +188,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [freePlays, setFreePlays] = useState([]);
   const [playerScore, setPlayerScore] = useState(null);
   const [playerRank, setPlayerRank] = useState(null);
+  const [bestScoreId, setBestScoreId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deviceDaily, setDeviceDaily] = useState([]);
@@ -190,6 +196,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [fastestToday, setFastestToday] = useState(null);
   const [reasonerGiveUps, setReasonerGiveUps] = useState([]);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [freeOpen, setFreeOpen] = useState(false);
   const [wonKeys, setWonKeys] = useState(() => new Set());
   const [botPhase, setBotPhase] = useState('idle');
   const [reloadToken, setReloadToken] = useState(0);
@@ -267,6 +274,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         ...localFree,
       ].sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
 
+      const best = bestForUser(rows, uid);
       let mine = null;
       if (highlightMode !== 'free' && highlightId && uid) {
         const highlighted = rows.find((row) => row.id === highlightId && row.uid === uid);
@@ -274,7 +282,11 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       }
       if (!mine) mine = latestForUser(rows, uid);
       const bot = rows.find(isReasoner) || null;
-      const { top, blocks } = topAndPins(rows, { player: mine, bot });
+      const { top, blocks } = topAndPins(rows, {
+        player: best,
+        extra: mine && mine.id !== best?.id ? mine : null,
+        bot,
+      });
 
       const won = new Set();
       const addWin = (row) => {
@@ -303,6 +315,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       setWonKeys(won);
       setPlayerScore(mine || null);
       setPlayerRank(rankOf(rows, mine?.id));
+      setBestScoreId(best?.id || '');
       setError(remoteError);
       setLoading(false);
     }
@@ -367,6 +380,10 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const pathHeading = showingFastest || isWikiBot(pathRow) ? WIKI_BOT_NAME : 'הדרך';
   const boardHasRows = scores.length > 0 || pinBlocks.length > 0 || reasonerGiveUps.length > 0;
 
+  function isYourScore(row) {
+    return row.id === highlightedId || (bestScoreId !== '' && row.id === bestScoreId);
+  }
+
   function showDailyPath(row) {
     const key = winKey(row);
     if (key && wonKeys.has(key)) return true;
@@ -390,7 +407,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     onPlayAgain(row);
   }
 
-  function renderDaily(row, rank, highlighted) {
+  function renderDaily(row, rank, highlighted, anchor = true) {
     return (
       <DailyRow
         key={row.id}
@@ -401,6 +418,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         onReplay={replay}
         allowReplay
         showPath={showDailyPath(row)}
+        anchor={anchor}
       />
     );
   }
@@ -434,7 +452,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
 
               {botPhase === 'running' ? <p className="status">מחפשים את הדרך המהירה ביותר…</p> : null}
 
-              {!loading && !boardOpen && playerScore ? (
+              {!loading && playerScore ? (
                 <div className="mine-strip">
                   <div className="score-table">
                     <div className="score-head">
@@ -443,7 +461,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                       <span>צעדים</span>
                       <span>זמן</span>
                     </div>
-                    {renderDaily(playerScore, playerRank, true)}
+                    {renderDaily(playerScore, playerRank, true, !boardOpen)}
                   </div>
                 </div>
               ) : null}
@@ -484,7 +502,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                 </button>
               ) : null}
 
-              {boardOpen && scores.length > 0 ? (
+              {boardOpen && (scores.length > 0 || pinBlocks.length > 0) ? (
                 <div className="score-table">
                   <div className="score-head">
                     <span>מקום</span>
@@ -492,16 +510,11 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                     <span>צעדים</span>
                     <span>זמן</span>
                   </div>
-                  {scores.map((row, index) => renderDaily(row, index + 1, row.id === highlightedId))}
-                </div>
-              ) : null}
-
-              {boardOpen && pinBlocks.length > 0 ? (
-                <div className="outside-top">
+                  {scores.map((row, index) => renderDaily(row, index + 1, isYourScore(row)))}
                   {pinBlocks.map((block) => (
                     block.kind === 'gap'
                       ? <p className="dots" aria-hidden="true" key={`gap-${block.rank}`}>···</p>
-                      : renderDaily(block.row, block.rank, block.highlighted)
+                      : renderDaily(block.row, block.rank, block.highlighted || isYourScore(block.row))
                   ))}
                 </div>
               ) : null}
@@ -515,23 +528,24 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
               {boardOpen && !loading && !error && scores.length === 0 && reasonerGiveUps.length === 0 ? (
                 <p className="empty">עדיין אין תוצאות.</p>
               ) : null}
-
-              {deviceDaily.length > 0 ? (
-                <div className="device-scores">
-                  <h3>במכשיר הזה</h3>
-                  <div className="score-table">
-                    {deviceDaily.map((row) => renderDaily(row, null, row.id === highlightId))}
-                  </div>
-                </div>
-              ) : null}
             </section>
 
             <section className="free-board" aria-label="המשחקים החופשיים שלי">
-              <h2>המשחקים החופשיים שלי</h2>
-              {!loading && !error && freePlays.length === 0 ? (
+              {!loading ? (
+                <button
+                  className="board-disclosure"
+                  type="button"
+                  aria-expanded={freeOpen}
+                  onClick={() => setFreeOpen((open) => !open)}
+                >
+                  <span>{freeOpen ? 'הסתרת המשחקים החופשיים' : 'המשחקים החופשיים שלי'}</span>
+                  <span className="board-chevron" aria-hidden="true" />
+                </button>
+              ) : null}
+              {freeOpen && !loading && !error && freePlays.length === 0 ? (
                 <p className="empty">עדיין אין משחקים חופשיים.</p>
               ) : null}
-              {freePlays.length > 0 ? (
+              {freeOpen && freePlays.length > 0 ? (
                 <div className="score-table">
                   <div className="score-head free-main">
                     <span>תאריך</span>
@@ -559,6 +573,15 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                 </div>
               ) : null}
             </section>
+
+            {deviceDaily.length > 0 ? (
+              <div className="device-scores">
+                <h3>במכשיר הזה</h3>
+                <div className="score-table">
+                  {deviceDaily.map((row) => renderDaily(row, null, row.id === highlightId, false))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="board-bar">
