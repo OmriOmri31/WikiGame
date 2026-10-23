@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ADMIN_UID, isAdmin } from './admin';
-import { startDailyBot } from './botRun';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
 import { rememberLinkFromError } from './linking';
@@ -11,11 +10,12 @@ import { exitFullscreen } from './fullscreen';
 import { clearGameSession, loadGameSession } from './gameSession';
 import Stage from './Stage';
 import { skipIntroThisSession } from './screens/IntroAlert';
-import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
-import GameScreen from './screens/GameScreen';
-import Leaderboard from './screens/Leaderboard';
-import AdminScreen from './screens/AdminScreen';
+
+// Heavy screens load on demand so the home page opens fast.
+const GameScreen = lazy(() => import('./screens/GameScreen'));
+const Leaderboard = lazy(() => import('./screens/Leaderboard'));
+const AdminScreen = lazy(() => import('./screens/AdminScreen'));
 
 function deskPath() {
   return window.location.pathname === '/admin';
@@ -31,7 +31,25 @@ function resumedMatch(session) {
   };
 }
 
+function Loading() {
+  return (
+    <Stage>
+      <main className="stage-status">
+        <p className="status">טוען…</p>
+      </main>
+    </Stage>
+  );
+}
+
 export default function App() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <AppScreens />
+    </Suspense>
+  );
+}
+
+function AppScreens() {
   const [screen, setScreen] = useState(() => {
     if (deskPath()) {
       skipIntroThisSession();
@@ -41,7 +59,7 @@ export default function App() {
       skipIntroThisSession();
       return 'game';
     }
-    return 'splash';
+    return 'home';
   });
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -52,7 +70,6 @@ export default function App() {
   const [match, setMatch] = useState(() => (
     deskPath() ? { mode: 'daily', pair: null, id: 0, resume: null } : resumedMatch(loadGameSession())
   ));
-  const showHome = useCallback(() => setScreen('home'), []);
 
   function beginGame(next) {
     clearGameSession();
@@ -106,7 +123,21 @@ export default function App() {
     setScreen('home');
   }, [authReady, user, screen]);
 
-  useEffect(() => startDailyBot(), []);
+  // The daily bot is background work; start it after the first paint.
+  useEffect(() => {
+    let stop = null;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      import('./botRun').then(({ startDailyBot }) => {
+        if (!cancelled) stop = startDailyBot();
+      }).catch((error) => console.error(error));
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      stop?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (screen !== 'game') exitFullscreen();
@@ -153,10 +184,6 @@ export default function App() {
     setAuthVersion((value) => value + 1);
     return current.emailVerified;
   }, []);
-
-  if (screen === 'splash') {
-    return <SplashScreen onDone={showHome} />;
-  }
 
   // Account gate: email accounts must verify, and every account needs a unique nickname.
   if (screen !== 'admin' && authReady && user) {

@@ -53,5 +53,20 @@ export default defineConfig(({ mode }) => {
   }
   return {
     plugins: [react(), geminiDev()],
+    build: {
+      chunkSizeWarningLimit: 700,
+      rolldownOptions: {
+        output: {
+          // Vendor code in its own long-cached files, so app deploys don't re-download Firebase/React.
+          codeSplitting: {
+            groups: [
+              { name: 'firestore', test: /node_modules[\\/](@firebase[\\/]firestore|@firebase[\\/]webchannel-wrapper|re2js)/ },
+              { name: 'firebase-auth', test: /node_modules[\\/](@firebase[\\/](auth|app|util|component|logger)|idb|tslib)/ },
+              { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            ],
+          },
+        },
+      },
+    },
   };
 });
