@@ -393,6 +393,8 @@ a:focus-visible {
   height: 100dvh;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-x: hidden;
   background: var(--paper);
   color: var(--label);
 }
@@ -763,14 +765,18 @@ a:focus-visible {
 .article-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   scroll-padding-top: 8.5rem;
 }
 
 .article-inner.is-loading { opacity: 0.55; }
 
 .article-inner {
+  width: 100%;
   max-width: 900px;
+  min-width: 0;
   margin: 0 auto;
   padding: 4px 16px 48px;
 }
@@ -784,6 +790,8 @@ a:focus-visible {
 }
 
 .article-body {
+  min-width: 0;
+  max-width: 100%;
   line-height: 1.5;
   font-size: 1.0625rem;
 }
@@ -854,9 +862,27 @@ mark.page-find.is-current {
   max-width: 100%;
 }
 
-.article-body .wikitable {
+.article-body .table-scroll {
   display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 1rem 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+}
+
+.article-body .table-scroll > table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.article-body .wikitable {
   border: 0.5px solid var(--separator);
   border-radius: 10px;
 }
@@ -1073,7 +1099,9 @@ body:has(.intro-card) {
 
 .sheet-body {
   flex: 1;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-bottom: max(24px, env(safe-area-inset-bottom));
 }
 

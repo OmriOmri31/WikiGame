@@ -129,6 +129,17 @@ export function prepareArticleHtml(html) {
     element.setAttribute('srcset', rewritten);
   });
 
+  // A wide table has to scroll inside itself. Overflow on the table element
+  // does not contain the table on a phone, so the page grows with the row.
+  root.querySelectorAll('table').forEach((table) => {
+    if (table.parentElement?.closest('table')) return;
+    if (table.classList.contains('infobox') || table.closest('.infobox')) return;
+    const wrap = doc.createElement('div');
+    wrap.className = 'table-scroll';
+    table.parentNode.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  });
+
   return DOMPurify.sanitize(root.innerHTML, {
     ADD_TAGS: ['style'],
     ADD_ATTR: ['srcset', 'decoding', 'loading'],
