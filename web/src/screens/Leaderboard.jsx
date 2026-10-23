@@ -426,7 +426,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   return (
     <Stage className="stage-board">
       <header className="stage-bar">
-        <p className="wordmark">משחק <em>הוויקיפדיה</em></p>
+        <span className="wordmark" aria-hidden="true" />
         <div className="stage-actions">
           <ThemeButton />
           <button className="pill pill-quiet" type="button" onClick={() => onHomeRef.current()}>
@@ -497,7 +497,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                   aria-expanded={boardOpen}
                   onClick={() => setBoardOpen((open) => !open)}
                 >
-                  <span>{boardOpen ? 'הסתרת הטבלה' : 'טבלת השיאים'}</span>
+                  <span>{boardOpen ? 'הסתרת הטבלה' : 'טבלה יומית'}</span>
                   <span className="board-chevron" aria-hidden="true" />
                 </button>
               ) : null}
