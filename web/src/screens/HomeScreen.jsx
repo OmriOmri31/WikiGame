@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -10,7 +11,8 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { accountName, authErrorMessage, isReservedPlayerName, publicName } from '../account';
+import { accountName, authErrorMessage, publicName } from '../account';
+import { NICKNAME_TAKEN, cleanNickname, nicknameAvailable, nicknameProblem, savePendingNickname } from '../nickname';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
@@ -173,12 +175,9 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     event.preventDefault();
     const name = displayName.trim();
     const nextEmail = email.trim();
-    if (!name) {
-      setError('יש להזין שם לתצוגה.');
-      return;
-    }
-    if (isReservedPlayerName(name)) {
-      setError('השם וויקי בוט שמור לבוט הרשמי.');
+    const nameProblem = nicknameProblem(name);
+    if (nameProblem) {
+      setError(nameProblem);
       return;
     }
     if (!nextEmail) {
@@ -197,8 +196,18 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     setError('');
     setNotice('');
     try {
+      if (!(await nicknameAvailable(name))) {
+        setError(NICKNAME_TAKEN);
+        return;
+      }
+      savePendingNickname(name);
       const credential = await createUserWithEmailAndPassword(auth, nextEmail, password);
-      await updateProfile(credential.user, { displayName: name });
+      await updateProfile(credential.user, { displayName: cleanNickname(name) });
+      try {
+        await sendEmailVerification(credential.user);
+      } catch (sendError) {
+        console.error(sendError);
+      }
       setNamedUid(credential.user.uid);
       setOverrideName(name);
     } catch (signUpError) {
@@ -417,13 +426,13 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
                       >
                         {mode === 'sign-up' ? (
                           <>
-                            <label htmlFor="display-name">שם לתצוגה</label>
+                            <label htmlFor="display-name">כינוי</label>
                             <input
                               id="display-name"
                               value={displayName}
                               onChange={(event) => setDisplayName(event.target.value)}
                               autoComplete="nickname"
-                              maxLength={40}
+                              maxLength={24}
                               disabled={busy}
                             />
                           </>

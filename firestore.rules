@@ -13,6 +13,48 @@ service cloud.firestore {
         && request.resource.data.name.matches('(?i)^[\\s._\\-–—]*((wiki[\\s._\\-–—]*bot)|(ו+יקי[\\s._\\-–—]*בוט))[\\s._\\-–—]*$');
     }
 
+    // Email/password accounts must have confirmed their address. Google accounts are verified by Google.
+    function isVerified() {
+      return request.auth != null
+        && (request.auth.token.email_verified == true
+          || request.auth.token.firebase.sign_in_provider == 'google.com');
+    }
+
+    function isReservedNickname(name) {
+      return name.matches('(?i)^[\\s._\\-–—]*((wiki[\\s._\\-–—]*bot)|(ו+יקי[\\s._\\-–—]*בוט))[\\s._\\-–—]*$');
+    }
+
+    // One document per lower-cased nickname. Its existence is what makes a nickname unique.
+    match /nicknames/{key} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isVerified()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 24
+        && request.resource.data.name.lower() == key
+        && !isReservedNickname(request.resource.data.name)
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.key == key;
+      allow update: if false;
+      // Released only when the owner moves to a different nickname in the same write.
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.key != key;
+    }
+
+    // Each player's profile. The nickname must be reserved for the same player.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if isVerified()
+        && request.auth.uid == uid
+        && request.resource.data.nickname is string
+        && request.resource.data.key is string
+        && request.resource.data.nickname.lower() == request.resource.data.key
+        && getAfter(/databases/$(database)/documents/nicknames/$(request.resource.data.key)).data.uid == uid;
+      allow delete: if false;
+    }
+
     // Allow read access to 'daily' collection
     match /daily/{document=**} {
       allow read: if true;
@@ -21,8 +63,11 @@ service cloud.firestore {
     match /scores/{documentId} {
       allow read: if true;
       // Anyone may save a score. The official bot name is reserved for that bot.
-      allow create: if !isReservedBotName()
-        || request.resource.data.uid == 'wiki-reasoner';
+      // Players must be verified and post under their own uid. The daily bot keeps its own path.
+      allow create: if (request.resource.data.uid == 'wiki-reasoner')
+        || (!isReservedBotName()
+          && isVerified()
+          && request.resource.data.uid == request.auth.uid);
       // Scores stay fixed. The owner may attach the shortest path once, after it is found.
       allow update: if request.auth != null
         && resource.data.uid == request.auth.uid

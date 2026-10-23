@@ -4,6 +4,8 @@ import { ADMIN_UID, isAdmin } from './admin';
 import { startDailyBot } from './botRun';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
+import { loadProfile, needsEmailVerification, pendingNickname } from './nickname';
+import { NicknameScreen, VerifyEmailScreen } from './screens/AccountGate';
 import { exitFullscreen } from './fullscreen';
 import { clearGameSession, loadGameSession } from './gameSession';
 import Stage from './Stage';
@@ -43,6 +45,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [authNotice, setAuthNotice] = useState('');
+  const [, setAuthVersion] = useState(0);
+  const [profile, setProfile] = useState({ uid: '', data: null, ready: false });
   const [result, setResult] = useState(null);
   const [match, setMatch] = useState(() => (
     deskPath() ? { mode: 'daily', pair: null, id: 0, resume: null } : resumedMatch(loadGameSession())
@@ -115,6 +119,7 @@ export default function App() {
     });
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
+      setProfile({ uid: '', data: null, ready: false });
       setAuthReady(true);
     });
     return () => {
@@ -123,8 +128,57 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user || needsEmailVerification(user) || profile.uid === user.uid) return undefined;
+    let cancelled = false;
+    loadProfile(user.uid)
+      .then((data) => { if (!cancelled) setProfile({ uid: user.uid, data, ready: true }); })
+      .catch((error) => {
+        console.error(error);
+        if (!cancelled) setProfile({ uid: user.uid, data: null, ready: true, error: true });
+      });
+    return () => { cancelled = true; };
+  });
+
+  const refreshUser = useCallback(async () => {
+    const current = auth.currentUser;
+    if (!current) return false;
+    await current.reload();
+    if (current.emailVerified) await current.getIdToken(true);
+    setAuthVersion((value) => value + 1);
+    return current.emailVerified;
+  }, []);
+
   if (screen === 'splash') {
     return <SplashScreen onDone={showHome} />;
+  }
+
+  // Account gate: email accounts must verify, and every account needs a unique nickname.
+  if (screen !== 'admin' && authReady && user) {
+    if (needsEmailVerification(user)) {
+      return <VerifyEmailScreen user={user} onRefresh={refreshUser} />;
+    }
+    if (profile.uid !== user.uid || !profile.ready) {
+      return (
+        <Stage>
+          <main className="stage-status">
+            <p className="status">טוען…</p>
+          </main>
+        </Stage>
+      );
+    }
+    if (!profile.data?.nickname && !profile.error) {
+      const pending = pendingNickname();
+      return (
+        <NicknameScreen
+          key={user.uid}
+          user={user}
+          suggested={pending}
+          autoClaim={Boolean(pending)}
+          onDone={(data) => setProfile({ uid: user.uid, data, ready: true })}
+        />
+      );
+    }
   }
 
   if (screen === 'game') {
