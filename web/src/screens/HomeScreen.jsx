@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  EmailAuthProvider,
   GoogleAuthProvider,
+  linkWithCredential,
+  linkWithPopup,
   createUserWithEmailAndPassword,
   sendEmailVerification,
   sendPasswordResetEmail,
@@ -13,6 +16,7 @@ import {
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { accountName, authErrorMessage, publicName } from '../account';
 import { NICKNAME_TAKEN, cleanNickname, nicknameAvailable, nicknameProblem, savePendingNickname } from '../nickname';
+import { clearPendingLink, pendingLink, providerIds, rememberLinkFromError } from '../linking';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
@@ -51,7 +55,11 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(redirectError || '');
+  const [error, setError] = useState(redirectError && redirectError !== 'link' ? redirectError : '');
+  const [linkEmail, setLinkEmail] = useState(() => pendingLink()?.email || '');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [addPasswordOpen, setAddPasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [overrideName, setOverrideName] = useState('');
@@ -77,7 +85,8 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   }, []);
 
   useEffect(() => {
-    if (redirectError) setError(redirectError);
+    if (redirectError === 'link') setLinkEmail(pendingLink()?.email || '');
+    else if (redirectError) setError(redirectError);
   }, [redirectError]);
 
   useEffect(() => {
@@ -258,6 +267,12 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
       if (popupError?.code === 'auth/popup-closed-by-user' || popupError?.code === 'auth/cancelled-popup-request') {
         return;
       }
+      const link = rememberLinkFromError(popupError);
+      if (link) {
+        setLinkEmail(link.email);
+        setLinkPassword('');
+        return;
+      }
       if (!popupFallback.has(popupError?.code)) {
         console.error(popupError);
         setError(authErrorMessage(popupError));
@@ -269,6 +284,86 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
         console.error(redirectError);
         setError(authErrorMessage(redirectError));
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The email already has a password account: sign in with it once, then attach Google to the same uid.
+  async function submitLink(event) {
+    event.preventDefault();
+    const link = pendingLink();
+    if (!link) {
+      setLinkEmail('');
+      return;
+    }
+    if (!linkPassword) {
+      setError('יש להזין סיסמה.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const credential = await signInWithEmailAndPassword(auth, link.email, linkPassword);
+      await linkWithCredential(credential.user, link.credential);
+      await credential.user.reload();
+      clearPendingLink();
+      setLinkEmail('');
+      setLinkPassword('');
+      setNotice('חשבון Google חובר. מעכשיו אפשר להתחבר בשתי הדרכים.');
+    } catch (linkError) {
+      console.error(linkError);
+      setError(authErrorMessage(linkError, 'החיבור נכשל. נסו שוב.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cancelLink() {
+    clearPendingLink();
+    setLinkEmail('');
+    setLinkPassword('');
+    setError('');
+  }
+
+  async function connectGoogle() {
+    if (!user) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await linkWithPopup(user, new GoogleAuthProvider());
+      await user.reload();
+      setNotice('חשבון Google חובר. מעכשיו אפשר להתחבר בשתי הדרכים.');
+    } catch (linkError) {
+      if (linkError?.code !== 'auth/popup-closed-by-user' && linkError?.code !== 'auth/cancelled-popup-request') {
+        console.error(linkError);
+        setError(authErrorMessage(linkError, 'החיבור נכשל. נסו שוב.'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitAddPassword(event) {
+    event.preventDefault();
+    if (!user?.email) return;
+    if (newPassword.length < 6) {
+      setError(newPassword ? 'הסיסמה קצרה מדי. נדרשים לפחות 6 תווים.' : 'יש להזין סיסמה.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await linkWithCredential(user, EmailAuthProvider.credential(user.email, newPassword));
+      await user.reload();
+      setAddPasswordOpen(false);
+      setNewPassword('');
+      setNotice('הסיסמה נוספה. מעכשיו אפשר להתחבר גם עם אימייל וסיסמה.');
+    } catch (linkError) {
+      console.error(linkError);
+      setError(authErrorMessage(linkError, 'לא הצלחנו להוסיף סיסמה. נסו שוב.'));
     } finally {
       setBusy(false);
     }
@@ -343,6 +438,38 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
                     </div>
                   ) : null}
                 </section>
+                {notice ? <p className="form-note" role="status">{notice}</p> : null}
+                {!providerIds(user).includes('google.com') ? (
+                  <button className="text-button" type="button" onClick={connectGoogle} disabled={busy}>
+                    חיבור חשבון Google
+                  </button>
+                ) : null}
+                {!providerIds(user).includes('password') && user.email ? (
+                  addPasswordOpen ? (
+                    <form className="mail-form" onSubmit={submitAddPassword} noValidate>
+                      <label htmlFor="new-password">סיסמה חדשה עבור <bdi dir="ltr">{user.email}</bdi></label>
+                      <input
+                        id="new-password"
+                        type="password"
+                        dir="ltr"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        autoComplete="new-password"
+                        disabled={busy}
+                      />
+                      <button className="primary" type="submit" disabled={busy}>
+                        {busy ? 'רגע…' : 'הוספת סיסמה'}
+                      </button>
+                      <button className="text-button" type="button" onClick={() => setAddPasswordOpen(false)}>
+                        ביטול
+                      </button>
+                    </form>
+                  ) : (
+                    <button className="text-button" type="button" onClick={() => setAddPasswordOpen(true)}>
+                      הוספת התחברות עם סיסמה
+                    </button>
+                  )
+                ) : null}
                 <button className="text-button danger" type="button" onClick={handleSignOut}>
                   התנתקות
                 </button>
@@ -363,7 +490,40 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
                     </div>
                   </section>
                 ) : null}
-                {mailOpen ? (
+                {linkEmail ? (
+                  <div className="mail-form">
+                    <h2>חיבור חשבון Google</h2>
+                    <p className="form-note">
+                      כבר יש חשבון עם <bdi dir="ltr">{linkEmail}</bdi>. הזינו את הסיסמה שלו פעם אחת,
+                      ונחבר אליו את Google. הכינוי והתוצאות יישארו.
+                    </p>
+                    <form onSubmit={submitLink} noValidate>
+                      <label htmlFor="link-password">סיסמה</label>
+                      <input
+                        id="link-password"
+                        type="password"
+                        dir="ltr"
+                        value={linkPassword}
+                        onChange={(event) => setLinkPassword(event.target.value)}
+                        autoComplete="current-password"
+                        disabled={busy}
+                        autoFocus
+                      />
+                      {error ? <p className="form-error" role="alert">{error}</p> : null}
+                      <button className="primary" type="submit" disabled={busy}>
+                        {busy ? 'מחבר…' : 'חיבור והתחברות'}
+                      </button>
+                    </form>
+                    <div className="form-links">
+                      <button className="text-button" type="button" onClick={() => { cancelLink(); setEmail(linkEmail); setMailOpen(true); switchMode('reset'); }}>
+                        שכחתי סיסמה
+                      </button>
+                      <button className="text-button" type="button" onClick={cancelLink}>
+                        ביטול
+                      </button>
+                    </div>
+                  </div>
+                ) : mailOpen ? (
                   mode === 'reset' ? (
                     <div className="mail-form">
                       <h2>איפוס סיסמה</h2>
