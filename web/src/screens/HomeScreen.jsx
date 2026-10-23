@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  EmailAuthProvider,
   GoogleAuthProvider,
   linkWithCredential,
   linkWithPopup,
@@ -58,8 +57,6 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [error, setError] = useState(redirectError && redirectError !== 'link' ? redirectError : '');
   const [linkEmail, setLinkEmail] = useState(() => pendingLink()?.email || '');
   const [linkPassword, setLinkPassword] = useState('');
-  const [addPasswordOpen, setAddPasswordOpen] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [overrideName, setOverrideName] = useState('');
@@ -345,30 +342,6 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     }
   }
 
-  async function submitAddPassword(event) {
-    event.preventDefault();
-    if (!user?.email) return;
-    if (newPassword.length < 6) {
-      setError(newPassword ? 'הסיסמה קצרה מדי. נדרשים לפחות 6 תווים.' : 'יש להזין סיסמה.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      await linkWithCredential(user, EmailAuthProvider.credential(user.email, newPassword));
-      await user.reload();
-      setAddPasswordOpen(false);
-      setNewPassword('');
-      setNotice('הסיסמה נוספה. מעכשיו אפשר להתחבר גם עם אימייל וסיסמה.');
-    } catch (linkError) {
-      console.error(linkError);
-      setError(authErrorMessage(linkError, 'לא הצלחנו להוסיף סיסמה. נסו שוב.'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleSignOut() {
     setError('');
     try {
@@ -443,32 +416,6 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
                   <button className="text-button" type="button" onClick={connectGoogle} disabled={busy}>
                     חיבור חשבון Google
                   </button>
-                ) : null}
-                {!providerIds(user).includes('password') && user.email ? (
-                  addPasswordOpen ? (
-                    <form className="mail-form" onSubmit={submitAddPassword} noValidate>
-                      <label htmlFor="new-password">סיסמה חדשה עבור <bdi dir="ltr">{user.email}</bdi></label>
-                      <input
-                        id="new-password"
-                        type="password"
-                        dir="ltr"
-                        value={newPassword}
-                        onChange={(event) => setNewPassword(event.target.value)}
-                        autoComplete="new-password"
-                        disabled={busy}
-                      />
-                      <button className="primary" type="submit" disabled={busy}>
-                        {busy ? 'רגע…' : 'הוספת סיסמה'}
-                      </button>
-                      <button className="text-button" type="button" onClick={() => setAddPasswordOpen(false)}>
-                        ביטול
-                      </button>
-                    </form>
-                  ) : (
-                    <button className="text-button" type="button" onClick={() => setAddPasswordOpen(true)}>
-                      הוספת התחברות עם סיסמה
-                    </button>
-                  )
                 ) : null}
                 <button className="text-button danger" type="button" onClick={handleSignOut}>
                   התנתקות
