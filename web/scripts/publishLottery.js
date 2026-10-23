@@ -18,9 +18,19 @@ import {
   shiftBoard,
   takenPairKeys,
 } from '../src/lotteryModel.js';
+import {
+  USED_COLLECTION,
+  USED_DOCUMENT,
+  mergeUsedTitles,
+  normalizeUsedTitles,
+  sameTitleList,
+  usedTitleSet,
+  withSeedTitles,
+} from '../src/usedArticles.js';
 
 const boardRef = () => getFirestore().collection('lotteryQueue').doc('board');
 const dailyRef = () => getFirestore().collection('daily').doc('articles');
+const usedRef = () => getFirestore().collection(USED_COLLECTION).doc(USED_DOCUMENT);
 
 function credential() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -54,12 +64,35 @@ async function saveBoard(slots, publishedDateKey) {
   });
 }
 
-async function ensureSlots() {
+async function ensureUsedTitles() {
+  return getFirestore().runTransaction(async (transaction) => {
+    const snap = await transaction.get(usedRef());
+    const stored = normalizeUsedTitles(snap.exists ? snap.get('titles') : []);
+    const next = withSeedTitles(stored);
+    if (!sameTitleList(stored, next)) transaction.set(usedRef(), { titles: next });
+    return next;
+  });
+}
+
+async function rememberPlayed(start, goal) {
+  return getFirestore().runTransaction(async (transaction) => {
+    const snap = await transaction.get(usedRef());
+    const stored = normalizeUsedTitles(snap.exists ? snap.get('titles') : []);
+    const next = mergeUsedTitles(stored, [start, goal]);
+    if (!sameTitleList(stored, next)) transaction.set(usedRef(), { titles: next });
+    return next;
+  });
+}
+
+async function ensureSlots(blocked) {
   let board = await loadBoard();
   if (board.slots.length >= LOTTERY_DAYS && board.slots.every((slot) => slot.startTitle && slot.goalTitle)) {
     return board;
   }
-  const slots = await appendPairs(board.slots, (taken) => drawDistinctPair(taken));
+  const slots = await appendPairs(
+    board.slots,
+    (taken) => drawDistinctPair(taken, new Date(), blocked),
+  );
   await saveBoard(slots, board.publishedDateKey);
   board = await loadBoard();
   return board;
@@ -118,6 +151,7 @@ async function publishSlot(slot) {
     timestamp: Timestamp.fromMillis(stamp),
     lotteryDateKey: israelDateKey(new Date(stamp)),
   });
+  await rememberPlayed(start, goal);
   console.log(`published ${start} -> ${goal}`);
   if (slot.bfs && slot.bfs.status !== 'error') {
     await createScore(botScoreId(stamp, start, goal), scoreBody('bfs', slot.bfs, start, goal, stamp));
@@ -138,7 +172,8 @@ async function main() {
     return;
   }
   const today = israelDateKey(now);
-  let board = await ensureSlots();
+  const usedTitles = await ensureUsedTitles();
+  let board = await ensureSlots(usedTitleSet(usedTitles));
   if (board.publishedDateKey === today) {
     console.log('already published');
     return;
@@ -155,7 +190,9 @@ async function main() {
 
   await publishSlot(slots[0]);
 
-  const drawn = await drawDistinctPair(takenPairKeys(slots));
+  const usedSnap = await usedRef().get();
+  const blocked = usedTitleSet(usedSnap.exists ? usedSnap.get('titles') : []);
+  const drawn = await drawDistinctPair(takenPairKeys(slots), now, blocked);
   const shifted = shiftBoard(slots, today, drawn);
   const last = shifted.length - 1;
   console.log(`new fifth ${shifted[last].startTitle} -> ${shifted[last].goalTitle}`);

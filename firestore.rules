@@ -29,6 +29,10 @@ service cloud.firestore {
     match /lotteryQueue/{id} {
       allow read, write: if isDeskAdmin();
     }
+    // Articles that already went live. The desk reads them; the publish job writes them.
+    match /lotteryUsed/{id} {
+      allow read, write: if isDeskAdmin();
+    }
     // Deny all other access
     match /{document=**} {
       allow read, write: if false;

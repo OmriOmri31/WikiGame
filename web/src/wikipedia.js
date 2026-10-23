@@ -310,23 +310,49 @@ export async function pickFreePlayPair(date = new Date()) {
   return { start: pool[startIndex], goal: pool[goalIndex] };
 }
 
+function asBlockedSet(blockedTitles) {
+  const blocked = new Set();
+  if (!blockedTitles || typeof blockedTitles.forEach !== 'function') return blocked;
+  blockedTitles.forEach((title) => {
+    const name = normalizeTitle(title);
+    if (name) blocked.add(name);
+  });
+  return blocked;
+}
+
 // `taken` is a set of "start\ngoal" keys. The drawn pair is added to it.
-export async function drawDistinctPair(taken, date = new Date()) {
-  const pool = await freePlayPool(date);
+// `blockedTitles` are single articles that must not come up on either side.
+// A hit is thrown out and the draw runs again.
+export function pickUnusedPair(pool, taken, blockedTitles, random = Math.random) {
+  const blocked = asBlockedSet(blockedTitles);
   const used = taken instanceof Set ? taken : new Set();
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const startIndex = Math.floor(Math.random() * pool.length);
-    let goalIndex = Math.floor(Math.random() * (pool.length - 1));
+  const open = [];
+  const seen = new Set();
+  (pool || []).forEach((title) => {
+    const name = normalizeTitle(title);
+    if (!name || seen.has(name) || blocked.has(name)) return;
+    seen.add(name);
+    open.push(name);
+  });
+  if (open.length < 2) throw new Error('pair');
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const startIndex = Math.floor(random() * open.length);
+    let goalIndex = Math.floor(random() * (open.length - 1));
     if (goalIndex >= startIndex) goalIndex += 1;
-    const start = pool[startIndex];
-    const goal = pool[goalIndex];
-    if (!start || !goal || sameTitle(start, goal)) continue;
+    const start = open[startIndex];
+    const goal = open[goalIndex];
+    if (!start || !goal || sameTitle(start, goal) || blocked.has(start) || blocked.has(goal)) continue;
     const key = `${start}\n${goal}`;
     if (used.has(key)) continue;
     used.add(key);
     return { start, goal };
   }
   throw new Error('pair');
+}
+
+export async function drawDistinctPair(taken, date = new Date(), blockedTitles) {
+  const pool = await freePlayPool(date);
+  return pickUnusedPair(pool, taken, blockedTitles);
 }
 
 export async function resolveStartTitle(storedStart, targetTitle, date = new Date()) {

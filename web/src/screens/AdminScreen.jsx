@@ -12,13 +12,16 @@ import Stage from '../Stage';
 import { formatDuration } from '../time';
 import { REASONER_NAME } from '../reasonerBot';
 import { WIKI_BOT_NAME, suggestArticles } from '../wikiBot';
+import { SEED_USED_TITLES } from '../usedArticles';
 import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
 import { askDeskModel, runBfs, runReasoner } from '../lotteryBots';
 import {
   ensureQueue,
+  ensureUsedTitles,
   saveSlotResult,
   slotLabelDate,
   subscribeQueue,
+  subscribeUsedTitles,
   titlesChanged,
   updateSlotTitles,
 } from '../lotteryQueue';
@@ -283,6 +286,8 @@ function DeskSignIn({ onBack }) {
 
 function Desk({ user, onPlay, onBack }) {
   const [board, setBoard] = useState(null);
+  const [usedTitles, setUsedTitles] = useState(null);
+  const [usedError, setUsedError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [drafts, setDrafts] = useState({});
   const [rowErrors, setRowErrors] = useState({});
@@ -301,6 +306,24 @@ function Desk({ user, onPlay, onBack }) {
 
   useEffect(() => {
     let live = true;
+    let latestUsed = null;
+    const seeded = (titles) => SEED_USED_TITLES.every((title) => (titles || []).includes(title));
+    ensureUsedTitles().catch((error) => {
+      console.error(error);
+      if (live && !seeded(latestUsed)) {
+        setUsedError('לא הצלחנו לשמור את מאגר הערכים. פרסמו את כללי Firestore.');
+      }
+    });
+    const stopUsed = subscribeUsedTitles((titles, error) => {
+      if (!live) return;
+      if (error) {
+        setUsedError('אין הרשאה לקרוא את מאגר הערכים. פרסמו את כללי Firestore.');
+        return;
+      }
+      latestUsed = titles;
+      if (seeded(titles)) setUsedError('');
+      setUsedTitles(titles);
+    });
     ensureQueue().catch((error) => {
       console.error(error);
       if (live) setLoadError('לא הצלחנו להכין את התור.');
@@ -316,6 +339,7 @@ function Desk({ user, onPlay, onBack }) {
     return () => {
       live = false;
       stop();
+      stopUsed();
     };
   }, []);
 
@@ -587,6 +611,25 @@ function Desk({ user, onPlay, onBack }) {
             );
           })}
         </div>
+        <section className="desk-card desk-used" aria-label="ערכים שכבר שימשו">
+          <h2>ערכים שכבר שימשו{usedTitles?.length ? ` · ${usedTitles.length}` : ''}</h2>
+          <p className="lede">
+            הגרלה חדשה לא בוחרת ערך מהרשימה. ערך נכנס לכאן רק אחרי שהזוג שלו פורסם, לא בזמן שהוא בתור.
+          </p>
+          {usedError ? <p className="form-error" role="alert">{usedError}</p> : null}
+          {!usedError && !usedTitles?.length ? <p className="status">טוען את המאגר…</p> : null}
+          {usedTitles && usedTitles.length > 0 ? (
+            <ul className="desk-used-list">
+              {usedTitles.map((title) => (
+                <li key={title}>
+                  <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
+                    <bdi>{title}</bdi>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
         <button className="text-button danger" type="button" onClick={leave} disabled={signingOut}>
           התנתקות
         </button>

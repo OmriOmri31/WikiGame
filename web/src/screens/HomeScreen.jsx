@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
@@ -15,6 +15,7 @@ import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
+import IntroAlert, { introSeen, markIntroSeen } from './IntroAlert';
 import { useTheme } from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 
@@ -55,6 +56,11 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
+  const [introOpen, setIntroOpen] = useState(() => !introSeen());
+  const dismissIntro = useCallback(() => {
+    markIntroSeen();
+    setIntroOpen(false);
+  }, []);
 
   useEffect(() => {
     if (redirectError) setError(redirectError);
@@ -467,6 +473,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           </div>
         </section>
       </main>
+      <IntroAlert open={introOpen && !user} onDismiss={dismissIntro} />
     </Stage>
   );
 }

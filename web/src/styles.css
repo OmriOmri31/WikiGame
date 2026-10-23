@@ -964,6 +964,23 @@ mark.page-find.is-current {
   margin-bottom: 18px;
 }
 
+html:has(.intro-card),
+body:has(.intro-card) {
+  overflow: hidden;
+}
+
+.intro-card p {
+  margin: 0 0 12px;
+  text-align: center;
+  text-wrap: balance;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+
+.intro-card .primary {
+  margin-top: 6px;
+}
+
 .congrats p {
   text-align: center;
   font-size: 1.08rem;
@@ -2796,6 +2813,43 @@ html[data-theme="dark"] .stage-home input {
 .desk-button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.desk-used {
+  margin-top: 14px;
+  margin-bottom: 18px;
+}
+
+.desk-used .lede {
+  margin-bottom: 12px;
+  color: var(--stage-muted);
+}
+
+.desk-used-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.desk-used-list a {
+  display: inline-block;
+  max-width: 100%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--stage-fill);
+  color: var(--stage-ink);
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.desk-used-list a:hover {
+  text-decoration: underline;
 }
 
 @media (hover: hover) {

@@ -8,8 +8,18 @@ import {
   normalizeBoard,
   pairKey,
 } from './lotteryModel.js';
+import {
+  USED_COLLECTION,
+  USED_DOCUMENT,
+  normalizeUsedTitles,
+  pairBlocked,
+  sameTitleList,
+  usedTitleSet,
+  withSeedTitles,
+} from './usedArticles.js';
 
 const ref = doc(db, 'lotteryQueue', 'board');
+const usedRef = doc(db, USED_COLLECTION, USED_DOCUMENT);
 let filling = null;
 
 function cloneSlots(slots) {
@@ -34,20 +44,50 @@ export function ensureQueue() {
   return filling;
 }
 
+async function blockedTitles() {
+  const snap = await getDoc(usedRef);
+  return usedTitleSet(snap.exists() ? snap.data()?.titles : []);
+}
+
+export function subscribeUsedTitles(listener) {
+  return onSnapshot(usedRef, (snap) => {
+    listener(normalizeUsedTitles(snap.exists() ? snap.data()?.titles : []));
+  }, (error) => {
+    console.error(error);
+    listener(null, error);
+  });
+}
+
+export async function ensureUsedTitles() {
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(usedRef);
+    const stored = normalizeUsedTitles(snap.exists() ? snap.data()?.titles : []);
+    const next = withSeedTitles(stored);
+    if (sameTitleList(stored, next)) return;
+    transaction.set(usedRef, { titles: next });
+  });
+}
+
 async function fillQueue() {
   for (let pass = 0; pass < 3; pass += 1) {
     const snap = await getDoc(ref);
     const board = normalizeBoard(snap.exists() ? snap.data() : null);
     if (boardReady(board)) return;
-    const drawn = await appendPairs(board.slots, (taken) => drawDistinctPair(taken));
+    const blocked = await blockedTitles();
+    const drawn = await appendPairs(board.slots, (taken) => drawDistinctPair(taken, new Date(), blocked));
     let done = false;
     try {
       done = await runTransaction(db, async (transaction) => {
       const fresh = await transaction.get(ref);
+      const usedSnap = await transaction.get(usedRef);
       const current = normalizeBoard(fresh.exists() ? fresh.data() : null);
       if (boardReady(current)) return true;
+      const liveBlocked = usedTitleSet(usedSnap.exists() ? usedSnap.data()?.titles : []);
       const merged = await appendPairs(current.slots, async (taken) => {
-        const match = drawn.find((slot) => !taken.has(pairKey(slot.startTitle, slot.goalTitle)));
+        const match = drawn.find((slot) => (
+          !taken.has(pairKey(slot.startTitle, slot.goalTitle))
+          && !pairBlocked(slot.startTitle, slot.goalTitle, liveBlocked)
+        ));
         if (!match) throw new Error('pair');
         taken.add(pairKey(match.startTitle, match.goalTitle));
         return { start: match.startTitle, goal: match.goalTitle };
