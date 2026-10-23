@@ -10,7 +10,7 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { accountName, authErrorMessage } from '../account';
+import { accountName, authErrorMessage, isReservedPlayerName, publicName } from '../account';
 import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
@@ -159,6 +159,10 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
       setError('יש להזין שם לתצוגה.');
       return;
     }
+    if (isReservedPlayerName(name)) {
+      setError('השם וויקי בוט שמור לבוט הרשמי.');
+      return;
+    }
     if (!nextEmail) {
       setError('יש להזין אימייל.');
       return;
@@ -253,9 +257,10 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     }
   }
 
-  const greeting = user?.displayName?.trim()
-    || (user?.uid === namedUid ? overrideName : '')
-    || accountName(user);
+  const greeting = publicName(
+    user?.displayName?.trim() || (user?.uid === namedUid ? overrideName : ''),
+    '',
+  ) || accountName(user);
 
   const logoSrc = theme === 'dark' ? '/wikiwiki-logo-dark.png' : '/wikiwiki-logo.png';
 

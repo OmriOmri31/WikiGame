@@ -484,7 +484,7 @@ export async function pathLinkNames(titles) {
 }
 
 export function isWikiBot(row) {
-  return row?.uid === WIKI_BOT_UID || row?.bot === true;
+  return row?.uid === WIKI_BOT_UID;
 }
 
 function fnv(text, seed) {

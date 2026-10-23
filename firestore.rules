@@ -1,8 +1,6 @@
+// Firestore security rules with basic validation
+
 rules_version = '2';
-// Add this match to the rules already published in the Firebase console.
-// Do not deploy this file by itself: a ruleset with only this block denies
-// every other collection, including scores and daily/articles.
-// Replace PASTE_FIREBASE_UID with the same value as ADMIN_UID in web/src/admin.js.
 service cloud.firestore {
   match /databases/{database}/documents {
     function isDeskAdmin() {
@@ -10,8 +8,30 @@ service cloud.firestore {
         && request.auth.uid == 'bsoHTJvKDiOr3qzvmL1EIHdnsji1';
     }
 
+    function isReservedBotName() {
+      return request.resource.data.name is string
+        && request.resource.data.name.matches('(?i)^[\\s._\\-–—]*((wiki[\\s._\\-–—]*bot)|(ו+יקי[\\s._\\-–—]*בוט))[\\s._\\-–—]*$');
+    }
+
+    // Allow read access to 'daily' collection
+    match /daily/{document=**} {
+      allow read: if true;
+    }
+    // Allow read access to 'scores' collection
+    match /scores/{documentId} {
+      allow read: if true;
+      // Anyone may save a score. The official bot name is reserved for that bot.
+      allow create: if !isReservedBotName()
+        || request.resource.data.uid == 'wiki-reasoner';
+      allow update, delete: if false; // Prevent updates and deletes
+    }
+    // The next five daily pairs. Only the desk owner can read or change them.
     match /lotteryQueue/{id} {
       allow read, write: if isDeskAdmin();
+    }
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

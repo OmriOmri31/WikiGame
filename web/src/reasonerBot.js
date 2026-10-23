@@ -5,7 +5,7 @@ export const REASONER_UID = 'wiki-reasoner';
 export const REASONER_MAX_PAGES = 25;
 
 export function isReasoner(row) {
-  return row?.uid === REASONER_UID || row?.reasoner === true;
+  return row?.uid === REASONER_UID;
 }
 
 function fnv(text, seed) {

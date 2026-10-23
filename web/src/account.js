@@ -1,7 +1,22 @@
+// The official bot is the only player allowed to use this name.
+export function isReservedPlayerName(name) {
+  const compact = String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s._\-–—]+/g, '');
+  return compact === 'wikibot' || compact === 'ויקיבוט' || compact === 'וויקיבוט';
+}
+
+export function publicName(name, fallback = 'שחקן') {
+  const trimmed = String(name || '').trim();
+  if (!trimmed || isReservedPlayerName(trimmed)) return fallback;
+  return trimmed;
+}
+
 export function accountName(user) {
-  const displayName = user?.displayName?.trim();
+  const displayName = publicName(user?.displayName, '');
   if (displayName) return displayName;
-  const localPart = user?.email?.split('@')[0]?.trim();
+  const localPart = publicName(user?.email?.split('@')[0], '');
   return localPart || 'שחקן';
 }
 

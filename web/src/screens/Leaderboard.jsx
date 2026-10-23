@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
+import { publicName } from '../account';
+import { topAndPins, rankOf } from '../boardLayout';
 import { enterFullscreen } from '../fullscreen';
 import { db } from '../firebase';
 import { loadLocalScores } from '../localScores';
@@ -9,7 +11,7 @@ import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 import { subscribeBot } from '../botRun';
 import { isReasoner, REASONER_NAME } from '../reasonerBot';
 import { isWikiBot, pathLinkNames, WIKI_BOT_NAME } from '../wikiBot';
-import { articleUrl, normalizeTitle } from '../wikipedia';
+import { articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
 
 // Firestore rules allow create but not delete, so probe scores stay hidden here.
 const IGNORED_SCORE_IDS = new Set([
@@ -76,6 +78,24 @@ function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, s
   );
 }
 
+function rowName(row) {
+  if (isWikiBot(row)) return WIKI_BOT_NAME;
+  if (isReasoner(row)) return REASONER_NAME;
+  return publicName(row?.name);
+}
+
+function OfficialMark() {
+  return (
+    <span className="official-mark">
+      <svg className="official-seal" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M4.7 8.2 7 10.4 11.3 5.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      רשמי
+    </span>
+  );
+}
+
 function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, showPath }) {
   return (
     <div
@@ -85,7 +105,8 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, s
       <div className="score-main">
         <span className={Number.isInteger(rank) && rank <= 3 ? 'num is-medal' : 'num'}>{rank ?? '—'}</span>
         <span className="name">
-          {isWikiBot(row) ? WIKI_BOT_NAME : isReasoner(row) ? REASONER_NAME : row.name}
+          <span className="name-text">{rowName(row)}</span>
+          {isReasoner(row) ? <OfficialMark /> : null}
           {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
         </span>
         <span className="num" dir="ltr">{row.pagesVisited}</span>
@@ -161,8 +182,10 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deviceDaily, setDeviceDaily] = useState([]);
-  const [outsideBots, setOutsideBots] = useState([]);
+  const [pinBlocks, setPinBlocks] = useState([]);
+  const [fastestToday, setFastestToday] = useState(null);
   const [reasonerGiveUps, setReasonerGiveUps] = useState([]);
+  const [boardOpen, setBoardOpen] = useState(false);
   const [wonKeys, setWonKeys] = useState(() => new Set());
   const [botPhase, setBotPhase] = useState('idle');
   const [reloadToken, setReloadToken] = useState(0);
@@ -201,10 +224,24 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
 
       if (cancelled) return;
 
+      const todayKey = israelDateKey(new Date());
+      const fastest = readable
+        .filter((row) => (
+          isWikiBot(row)
+          && !row.gaveUp
+          && !row.lock
+          && row.mode !== 'free'
+          && Array.isArray(row.path)
+          && row.path.length > 0
+          && israelDateKey(new Date(timestampMillis(row.timestamp))) === todayKey
+        ))
+        .sort((a, b) => Number(a.pagesVisited) - Number(b.pagesVisited) || timestampMillis(a.timestamp) - timestampMillis(b.timestamp))[0] || null;
+
       const rows = readable.filter((row) => (
         row.mode !== 'free'
         && !row.gaveUp
         && !row.lock
+        && !isWikiBot(row)
         && typeof row.name === 'string'
         && row.name.trim()
       ));
@@ -223,13 +260,14 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         ...localFree,
       ].sort((a, b) => timestampMillis(b.timestamp) - timestampMillis(a.timestamp));
 
-      const top = rows.slice(0, 10);
       let mine = null;
       if (highlightMode !== 'free' && highlightId && uid) {
         const highlighted = rows.find((row) => row.id === highlightId && row.uid === uid);
         if (highlighted) mine = highlighted;
       }
       if (!mine) mine = latestForUser(rows, uid);
+      const bot = rows.find(isReasoner) || null;
+      const { top, blocks } = topAndPins(rows, { player: mine, bot });
 
       const won = new Set();
       const addWin = (row) => {
@@ -245,9 +283,8 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       setScores(top);
       setFreePlays(mineFree);
       setDeviceDaily(localDaily);
-      setOutsideBots(rows.flatMap((row, index) => (
-        (isWikiBot(row) || isReasoner(row)) && index >= 10 ? [{ row, rank: index + 1 }] : []
-      )));
+      setPinBlocks(blocks);
+      setFastestToday(fastest);
       setReasonerGiveUps(readable.filter((row) => (
         isReasoner(row)
         && row.gaveUp
@@ -258,7 +295,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       )));
       setWonKeys(won);
       setPlayerScore(mine || null);
-      setPlayerRank(mine ? rows.findIndex((row) => row.id === mine.id) + 1 : null);
+      setPlayerRank(rankOf(rows, mine?.id));
       setError(remoteError);
       setLoading(false);
     }
@@ -320,18 +357,8 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const pathRow = pathView?.row || null;
   const showingFastest = pathView?.kind === 'fastest';
   const pathTitles = showingFastest ? (fastestPath(pathRow) || []) : savedPath(pathRow);
-  const outsideRows = [
-    ...(playerRank > 10 && playerScore ? [{ row: playerScore, rank: playerRank, highlighted: true }] : []),
-    ...outsideBots
-      .filter((item) => item.row.id !== playerScore?.id)
-      .map((item) => ({ ...item, highlighted: false })),
-    ...reasonerGiveUps.map((row) => ({ row, rank: null, highlighted: false })),
-  ].sort((a, b) => {
-    if (a.rank == null && b.rank == null) return timestampMillis(b.row.timestamp) - timestampMillis(a.row.timestamp);
-    if (a.rank == null) return 1;
-    if (b.rank == null) return -1;
-    return a.rank - b.rank;
-  });
+  const pathHeading = showingFastest || isWikiBot(pathRow) ? WIKI_BOT_NAME : 'הדרך';
+  const boardHasRows = scores.length > 0 || pinBlocks.length > 0 || reasonerGiveUps.length > 0;
 
   function showDailyPath(row) {
     const key = winKey(row);
@@ -354,6 +381,21 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
     if (!canReplay(row)) return;
     enterFullscreen();
     onPlayAgain(row);
+  }
+
+  function renderDaily(row, rank, highlighted) {
+    return (
+      <DailyRow
+        key={row.id}
+        row={row}
+        rank={rank}
+        highlighted={highlighted}
+        onShowPath={showPlayed}
+        onReplay={replay}
+        allowReplay
+        showPath={showDailyPath(row)}
+      />
+    );
   }
 
   return (
@@ -385,12 +427,60 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
               {loading ? <p className="status">טוען תוצאות…</p> : null}
               {error ? <p className="form-error" role="alert">{error}</p> : null}
 
-              {!loading && !error && scores.length === 0 ? (
-                <p className="empty">עדיין אין תוצאות.</p>
-              ) : null}
               {botPhase === 'running' ? <p className="status">מחפשים את הדרך המהירה ביותר…</p> : null}
 
-              {scores.length > 0 ? (
+              {!loading && !boardOpen && playerScore ? (
+                <div className="mine-strip">
+                  <h3>התוצאה שלי</h3>
+                  <div className="score-table">
+                    <div className="score-head">
+                      <span>מקום</span>
+                      <span>שם</span>
+                      <span>צעדים</span>
+                      <span>זמן</span>
+                    </div>
+                    {renderDaily(playerScore, playerRank, true)}
+                  </div>
+                </div>
+              ) : null}
+              {!loading && !boardOpen && !playerScore && deviceDaily.length === 0 ? (
+                <p className="empty">{boardHasRows ? 'עדיין אין לך תוצאה בטבלה.' : 'עדיין אין תוצאות.'}</p>
+              ) : null}
+
+              {fastestToday ? (
+                <aside className="fastest-route">
+                  <div className="fastest-copy">
+                    <h3>{WIKI_BOT_NAME}</h3>
+                    <p>
+                      המסלול הקצר למשחק של היום
+                      <span className="fastest-steps">
+                        <bdi dir="ltr">{fastestToday.pagesVisited}</bdi>
+                        {' '}
+                        צעדים
+                      </span>
+                    </p>
+                  </div>
+                  {showDailyPath(fastestToday) ? (
+                    <button className="text-button compact" type="button" onClick={() => showPlayed(fastestToday)}>
+                      הצג דרך
+                    </button>
+                  ) : null}
+                </aside>
+              ) : null}
+
+              {boardHasRows ? (
+                <button
+                  className="board-disclosure"
+                  type="button"
+                  aria-expanded={boardOpen}
+                  onClick={() => setBoardOpen((open) => !open)}
+                >
+                  <span>{boardOpen ? 'הסתרת הטבלה' : 'טבלת השיאים'}</span>
+                  <span className="board-chevron" aria-hidden="true" />
+                </button>
+              ) : null}
+
+              {boardOpen && scores.length > 0 ? (
                 <div className="score-table">
                   <div className="score-head">
                     <span>מקום</span>
@@ -398,56 +488,36 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                     <span>צעדים</span>
                     <span>זמן</span>
                   </div>
-                  {scores.map((row, index) => (
-                    <DailyRow
-                      key={row.id}
-                      row={row}
-                      rank={index + 1}
-                      highlighted={row.id === highlightedId}
-                      onShowPath={showPlayed}
-                      onReplay={replay}
-                      allowReplay
-                      showPath={showDailyPath(row)}
-                    />
+                  {scores.map((row, index) => renderDaily(row, index + 1, row.id === highlightedId))}
+                </div>
+              ) : null}
+
+              {boardOpen && pinBlocks.length > 0 ? (
+                <div className="outside-top">
+                  {pinBlocks.map((block) => (
+                    block.kind === 'gap'
+                      ? <p className="dots" aria-hidden="true" key={`gap-${block.rank}`}>···</p>
+                      : renderDaily(block.row, block.rank, block.highlighted)
                   ))}
                 </div>
+              ) : null}
+
+              {boardOpen && reasonerGiveUps.length > 0 ? (
+                <div className="outside-top">
+                  {reasonerGiveUps.map((row) => renderDaily(row, null, false))}
+                </div>
+              ) : null}
+
+              {boardOpen && !loading && !error && scores.length === 0 && reasonerGiveUps.length === 0 ? (
+                <p className="empty">עדיין אין תוצאות.</p>
               ) : null}
 
               {deviceDaily.length > 0 ? (
                 <div className="device-scores">
                   <h3>במכשיר הזה</h3>
                   <div className="score-table">
-                    {deviceDaily.map((row) => (
-                      <DailyRow
-                        key={row.id}
-                        row={row}
-                        rank={null}
-                        highlighted={row.id === highlightId}
-                        onShowPath={showPlayed}
-                        onReplay={replay}
-                        allowReplay
-                        showPath={showDailyPath(row)}
-                      />
-                    ))}
+                    {deviceDaily.map((row) => renderDaily(row, null, row.id === highlightId))}
                   </div>
-                </div>
-              ) : null}
-
-              {outsideRows.length > 0 ? (
-                <div className="outside-top">
-                  <p className="dots" aria-hidden="true">···</p>
-                  {outsideRows.map((item) => (
-                    <DailyRow
-                      key={item.row.id}
-                      row={item.row}
-                      rank={item.rank}
-                      highlighted={item.highlighted}
-                      onShowPath={showPlayed}
-                      onReplay={replay}
-                      allowReplay
-                      showPath={showDailyPath(item.row)}
-                    />
-                  ))}
                 </div>
               ) : null}
             </section>
@@ -493,12 +563,12 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
             className="modal-card path-card"
             role="dialog"
             aria-modal="true"
-            aria-label={showingFastest ? WIKI_BOT_NAME : 'הדרך'}
+            aria-label={pathHeading}
             tabIndex={-1}
             ref={pathDialogRef}
             onClick={(event) => event.stopPropagation()}
           >
-            <h2>{showingFastest ? WIKI_BOT_NAME : 'הדרך'}</h2>
+            <h2>{pathHeading}</h2>
             {pathTitles.length > 0 ? (
               <>
                 <PathLine
