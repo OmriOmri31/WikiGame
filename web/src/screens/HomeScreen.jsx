@@ -357,7 +357,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     '',
   ) || accountName(user);
 
-  const logoSrc = theme === 'dark' ? '/wikiwiki-logo-dark.png' : '/wikiwiki-logo.png';
+  const logoSrc = theme === 'dark' ? '/wikiwiki-logo-dark.webp' : '/wikiwiki-logo.webp';
 
   return (
     <Stage className="stage-home">
@@ -371,8 +371,10 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
               className="home-logo rise"
               src={logoSrc}
               alt="WikiWiki"
-              width={1400}
-              height={1144}
+              width={800}
+              height={654}
+              fetchPriority="high"
+              decoding="async"
             />
           </h1>
         </header>
