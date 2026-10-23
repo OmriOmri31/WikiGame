@@ -1,7 +1,8 @@
 import { normalizeTitle } from './wikipedia.js';
 
-export const USED_COLLECTION = 'lotteryUsed';
-export const USED_DOCUMENT = 'titles';
+// Same collection as the queue, so the desk rules that are already published can read and write it.
+export const USED_COLLECTION = 'lotteryQueue';
+export const USED_DOCUMENT = 'used';
 
 // The pool starts with these two. Later titles join only after a pair is published.
 export const SEED_USED_TITLES = ['רואנדה', 'ירושלים'];

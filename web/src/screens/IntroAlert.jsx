@@ -1,12 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'wikigame.intro';
+const STORAGE_KEY = 'wikigame.introHide';
 
 export function introSeen() {
   try {
     return localStorage.getItem(STORAGE_KEY) === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -18,20 +18,30 @@ export function markIntroSeen() {
   }
 }
 
-export default function IntroAlert({ open, onDismiss }) {
+export default function IntroAlert({ open, rememberable, onDismiss }) {
+  const [hideForever, setHideForever] = useState(false);
+
+  useEffect(() => {
+    if (open) setHideForever(false);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
-      if (event.key === 'Escape') onDismiss();
+      if (event.key === 'Escape') onDismiss(rememberable && hideForever);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onDismiss]);
+  }, [open, onDismiss, rememberable, hideForever]);
 
   if (!open) return null;
 
+  function close() {
+    onDismiss(rememberable && hideForever);
+  }
+
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onDismiss}>
+    <div className="modal-backdrop" role="presentation" onClick={close}>
       <div
         className="modal-card confirm-card intro-card"
         role="alertdialog"
@@ -46,7 +56,17 @@ export default function IntroAlert({ open, onDismiss }) {
           <p>מתחילים בערך אחד, ומגיעים לשני רק דרך קישורים.</p>
           <p>בלי חיפוש. פחות דפים ופחות זמן, גבוה יותר בטבלה.</p>
         </div>
-        <button className="primary" type="button" autoFocus onClick={onDismiss}>
+        {rememberable ? (
+          <label className="intro-remember">
+            <input
+              type="checkbox"
+              checked={hideForever}
+              onChange={(event) => setHideForever(event.target.checked)}
+            />
+            <span>אל תציג שוב</span>
+          </label>
+        ) : null}
+        <button className="primary" type="button" autoFocus onClick={close}>
           הבנתי
         </button>
       </div>

@@ -311,13 +311,13 @@ function Desk({ user, onPlay, onBack }) {
     ensureUsedTitles().catch((error) => {
       console.error(error);
       if (live && !seeded(latestUsed)) {
-        setUsedError('לא הצלחנו לשמור את מאגר הערכים. פרסמו את כללי Firestore.');
+        setUsedError('לא הצלחנו לשמור את מאגר הערכים.');
       }
     });
     const stopUsed = subscribeUsedTitles((titles, error) => {
       if (!live) return;
       if (error) {
-        setUsedError('אין הרשאה לקרוא את מאגר הערכים. פרסמו את כללי Firestore.');
+        setUsedError('לא הצלחנו לטעון את מאגר הערכים.');
         return;
       }
       latestUsed = titles;

@@ -25,12 +25,9 @@ service cloud.firestore {
         || request.resource.data.uid == 'wiki-reasoner';
       allow update, delete: if false; // Prevent updates and deletes
     }
-    // The next five daily pairs. Only the desk owner can read or change them.
+    // The next five daily pairs, and the pool of articles that already went live.
+    // Only the desk owner can read or change them.
     match /lotteryQueue/{id} {
-      allow read, write: if isDeskAdmin();
-    }
-    // Articles that already went live. The desk reads them; the publish job writes them.
-    match /lotteryUsed/{id} {
       allow read, write: if isDeskAdmin();
     }
     // Deny all other access

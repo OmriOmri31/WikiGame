@@ -56,11 +56,13 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
-  const [introOpen, setIntroOpen] = useState(() => !introSeen());
-  const dismissIntro = useCallback(() => {
-    markIntroSeen();
-    setIntroOpen(false);
-  }, []);
+  const [introClosedFor, setIntroClosedFor] = useState('');
+  const introIdentity = user?.uid || 'guest';
+  const dismissIntro = useCallback((hideForever) => {
+    if (hideForever) markIntroSeen();
+    setIntroClosedFor(introIdentity);
+  }, [introIdentity]);
+  const showIntro = introClosedFor !== introIdentity && !(user && introSeen());
 
   useEffect(() => {
     if (redirectError) setError(redirectError);
@@ -473,7 +475,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           </div>
         </section>
       </main>
-      <IntroAlert open={introOpen && !user} onDismiss={dismissIntro} />
+      <IntroAlert open={showIntro} rememberable={Boolean(user)} onDismiss={dismissIntro} />
     </Stage>
   );
 }
