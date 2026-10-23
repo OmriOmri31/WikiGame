@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
+import { rememberGuestResult } from '../guestClaim';
 import { db } from '../firebase';
 import { saveLocalScore } from '../localScores';
 import { exitFullscreen } from '../fullscreen';
@@ -514,7 +515,11 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   }, [fatal]);
 
   async function storeScore(score) {
-    if (!user?.uid) return saveLocalScore(score);
+    if (!user?.uid) {
+      const row = saveLocalScore(score);
+      rememberGuestResult(row.id);
+      return row;
+    }
     const ref = await addDoc(collection(db, 'scores'), {
       uid: user.uid,
       name: accountName(user),

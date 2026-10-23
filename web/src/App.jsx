@@ -4,6 +4,7 @@ import { ADMIN_UID, isAdmin } from './admin';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
 import { rememberLinkFromError } from './linking';
+import { claimGuestResult } from './guestClaim';
 import { loadProfile, needsEmailVerification, pendingNickname } from './nickname';
 import { KeepNicknameScreen, NicknameScreen, VerifyEmailScreen } from './screens/AccountGate';
 import { exitFullscreen } from './fullscreen';
@@ -176,6 +177,14 @@ function AppScreens() {
     return () => { cancelled = true; };
   });
 
+  // Once the player is signed in, verified and named, move a pending guest result to the account.
+  const accountReady = Boolean(user && !needsEmailVerification(user) && profile.uid === user?.uid
+    && profile.data?.nickname && (user.displayName || '') === profile.data.nickname);
+  useEffect(() => {
+    if (!accountReady) return;
+    claimGuestResult(user, profile.data.nickname).catch((error) => console.error(error));
+  }, [accountReady, user, profile.data?.nickname]);
+
   const refreshUser = useCallback(async () => {
     const current = auth.currentUser;
     if (!current) return false;
@@ -256,6 +265,7 @@ function AppScreens() {
         highlightId={result?.id || ''}
         highlightMode={result?.mode || ''}
         onHome={() => setScreen('home')}
+        onSignIn={() => setScreen('home')}
         onPlayAgain={(row) => beginGame({
           mode: row.mode === 'free' ? 'free' : 'daily',
           pair: { startTitle: row.startTitle, goalTitle: row.goalTitle },

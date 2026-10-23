@@ -6,6 +6,7 @@ import { enterFullscreen } from '../fullscreen';
 import { db } from '../firebase';
 import { subscribeFastestPaths } from '../fastestSearch';
 import { loadLocalScores } from '../localScores';
+import { pendingGuestResultId } from '../guestClaim';
 import Stage from '../Stage';
 import ThemeButton from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
@@ -183,7 +184,7 @@ function PathLine({ titles, vias }) {
   );
 }
 
-export default function Leaderboard({ user, highlightId, highlightMode, onHome, onPlayAgain }) {
+export default function Leaderboard({ user, highlightId, highlightMode, onHome, onSignIn, onPlayAgain }) {
   const [scores, setScores] = useState([]);
   const [freePlays, setFreePlays] = useState([]);
   const [playerScore, setPlayerScore] = useState(null);
@@ -438,9 +439,17 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         <div className="board-scroll">
           <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
           {highlightId && savedOnDevice ? (
-            <p className="saved-note" role="status">
-              התוצאה נשמרה במכשיר הזה.
-            </p>
+            <div className="saved-note" role="status">
+              <p>התוצאה נשמרה במכשיר הזה.</p>
+              {!user && onSignIn && highlightId === pendingGuestResultId() ? (
+                <>
+                  <p className="saved-note-sub">התחברו או הירשמו כדי לשמור אותה בחשבון שלכם.</p>
+                  <button className="primary" type="button" onClick={onSignIn}>
+                    התחברות או הרשמה
+                  </button>
+                </>
+              ) : null}
+            </div>
           ) : null}
 
           <div className="board-columns">
