@@ -1,6 +1,44 @@
 import { useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'wikigame.introHide';
+const SESSION_KEY = 'wikigame.introSession';
+
+let decided = false;
+let shouldShow = false;
+
+function sessionMarked() {
+  try {
+    return sessionStorage.getItem(SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markSession() {
+  try {
+    sessionStorage.setItem(SESSION_KEY, '1');
+  } catch {
+    // The in-memory decision still covers this page.
+  }
+}
+
+export function skipIntroThisSession() {
+  decided = true;
+  shouldShow = false;
+  markSession();
+}
+
+export function claimIntroThisSession(hiddenForever) {
+  if (!decided) {
+    decided = true;
+    if (hiddenForever || sessionMarked()) shouldShow = false;
+    else {
+      shouldShow = true;
+      markSession();
+    }
+  }
+  return shouldShow;
+}
 
 export function introSeen() {
   try {

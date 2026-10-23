@@ -7,6 +7,7 @@ import { authErrorMessage } from './account';
 import { exitFullscreen } from './fullscreen';
 import { clearGameSession, loadGameSession } from './gameSession';
 import Stage from './Stage';
+import { skipIntroThisSession } from './screens/IntroAlert';
 import SplashScreen from './screens/SplashScreen';
 import HomeScreen from './screens/HomeScreen';
 import GameScreen from './screens/GameScreen';
@@ -29,8 +30,15 @@ function resumedMatch(session) {
 
 export default function App() {
   const [screen, setScreen] = useState(() => {
-    if (deskPath()) return 'admin';
-    return loadGameSession() ? 'game' : 'splash';
+    if (deskPath()) {
+      skipIntroThisSession();
+      return 'admin';
+    }
+    if (loadGameSession()) {
+      skipIntroThisSession();
+      return 'game';
+    }
+    return 'splash';
   });
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);

@@ -15,7 +15,7 @@ import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
-import IntroAlert, { introSeen, markIntroSeen } from './IntroAlert';
+import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen } from './IntroAlert';
 import { useTheme } from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 
@@ -56,13 +56,11 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
-  const [introClosedFor, setIntroClosedFor] = useState('');
-  const introIdentity = user?.uid || 'guest';
+  const [showIntro, setShowIntro] = useState(() => claimIntroThisSession(Boolean(user) && introSeen()));
   const dismissIntro = useCallback((hideForever) => {
     if (hideForever) markIntroSeen();
-    setIntroClosedFor(introIdentity);
-  }, [introIdentity]);
-  const showIntro = introClosedFor !== introIdentity && !(user && introSeen());
+    setShowIntro(false);
+  }, []);
 
   useEffect(() => {
     if (redirectError) setError(redirectError);
