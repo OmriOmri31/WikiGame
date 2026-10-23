@@ -1,4 +1,5 @@
-import { findShortestPath, WIKI_BOT_MAX_PAGES } from './wikiBot.js';
+import { clickableVias, findShortestPath, WIKI_BOT_MAX_PAGES } from './wikiBot.js';
+import { normalizeTitle } from './wikipedia.js';
 import { playReasoner } from './reasonerPlay.js';
 
 function failed(errorMessage) {
@@ -11,6 +12,7 @@ function failed(errorMessage) {
     gaveUp: false,
     calls: 0,
     spentUsd: 0,
+    checked: false,
     error: errorMessage,
   };
 }
@@ -28,6 +30,7 @@ export async function runBfs(start, goal) {
         gaveUp: true,
         calls: 0,
         spentUsd: 0,
+        checked: true,
         error: '',
       };
     }
@@ -40,11 +43,33 @@ export async function runBfs(start, goal) {
       gaveUp: false,
       calls: 0,
       spentUsd: 0,
+      checked: true,
       error: '',
     };
   } catch (error) {
     console.error(error);
     return failed('החיפוש נכשל');
+  }
+}
+
+const UNLINKED = 'הדרך כוללת קישור שלא מופיע בדף';
+
+export async function confirmBfsResult(result) {
+  if (!result || result.checked || result.status === 'error' || result.gaveUp) return result;
+  const path = Array.isArray(result.path) ? result.path.map((title) => normalizeTitle(title)) : [];
+  if (path.length < 2) return { ...result, path, checked: true };
+  if (path.some((title) => !title)) {
+    return { ...result, status: 'error', checked: false, error: UNLINKED };
+  }
+  try {
+    const notes = await clickableVias(path);
+    if (!notes.ok || notes.via.length !== path.length - 1) {
+      return { ...result, status: 'error', checked: false, error: UNLINKED };
+    }
+    return { ...result, path, pathVia: notes.via, checked: true, error: '' };
+  } catch (error) {
+    console.error(error);
+    return result;
   }
 }
 

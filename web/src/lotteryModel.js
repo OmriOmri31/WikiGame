@@ -29,6 +29,7 @@ export function normalizeBot(value) {
     timeTaken: Number(value.timeTaken) || 0,
     path: textList(value.path),
     pathVia: textList(value.pathVia, true),
+    checked: value.checked === true,
     gaveUp: Boolean(value.gaveUp),
     calls: Number(value.calls) || 0,
     spentUsd: Number(value.spentUsd) || 0,

@@ -9,8 +9,8 @@ import GameMenu from '../GameMenu';
 import GameTools, { FindBar } from '../GameTools';
 import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
 import Sheet from '../Sheet';
+import { adoptFastestSearch, beginFastestSearch, fastestPathNow, publishFastestPath } from '../fastestSearch';
 import { formatDuration } from '../time';
-import { findShortestPath } from '../wikiBot';
 import {
   fetchArticle,
   normalizeTitle,
@@ -68,7 +68,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const [secretOpen, setSecretOpen] = useState(false);
   const [secretInput, setSecretInput] = useState('');
   const [congratsOpen, setCongratsOpen] = useState(false);
-  const [seekingFastest, setSeekingFastest] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [backUses, setBackUses] = useState(3);
   const [searchTitle, setSearchTitle] = useState(null);
@@ -314,6 +313,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       loadingRef.current = true;
       try {
         let chosen = await chooseTitles();
+        if (mode === 'free') beginFastestSearch(chosen.start, chosen.goal);
         let startArticle;
         let targetArticle;
         for (let index = 0; index < 3; index += 1) {
@@ -324,6 +324,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
           if (!sameTitle(startArticle.title, targetArticle.title)) break;
           if (chosen.fixed || index === 2) throw new Error('same');
           chosen = await chooseTitles();
+          if (mode === 'free') beginFastestSearch(chosen.start, chosen.goal);
         }
         const [startHtml, targetHtml] = await Promise.all([
           prepareArticleHtml(startArticle.html),
@@ -343,6 +344,9 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         const path = snapshot?.path?.length ? snapshot.path.slice() : [startArticle.title];
         path[path.length - 1] = playingArticle.title;
 
+        if (mode === 'free') {
+          adoptFastestSearch(chosen.start, chosen.goal, startArticle.title, targetArticle.title);
+        }
         lockedPairRef.current = {
           start: startArticle.title,
           goal: targetArticle.title,
@@ -509,17 +513,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     };
   }, [fatal]);
 
-  async function shortestFreePath() {
-    setSeekingFastest(true);
-    try {
-      const found = await findShortestPath(startTitleRef.current, goalTitleRef.current);
-      return found?.path || [];
-    } catch (error) {
-      console.error(error);
-      return [];
-    }
-  }
-
   async function storeScore(score) {
     if (!user?.uid) return saveLocalScore(score);
     const ref = await addDoc(collection(db, 'scores'), {
@@ -536,6 +529,23 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       ...(score.gaveUp ? { gaveUp: true } : {}),
     });
     return { id: ref.id };
+  }
+
+  async function saveFinishedScore(score) {
+    const ready = score.mode === 'free'
+      ? fastestPathNow(score.startTitle, score.goalTitle)
+      : null;
+    const saved = await storeScore({
+      ...score,
+      ...(Array.isArray(ready) ? { fastestPath: ready } : {}),
+    });
+    if (score.mode === 'free' && !Array.isArray(ready)) {
+      publishFastestPath(score.startTitle, score.goalTitle, {
+        id: saved.id,
+        local: Boolean(saved.local),
+      });
+    }
+    return saved;
   }
 
   async function completeGame(pageCount) {
@@ -564,8 +574,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     }
 
     const scoreMode = mode === 'free' ? 'free' : 'daily';
-    const fastest = scoreMode === 'free' ? await shortestFreePath() : null;
-    if (scoreMode === 'free') setSeekingFastest(false);
     const finish = (id) => {
       const delay = Math.max(0, 2000 - (Date.now() - shownAt));
       window.setTimeout(() => {
@@ -579,7 +587,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     };
 
     try {
-      const saved = await storeScore({
+      const saved = await saveFinishedScore({
         name: 'שחקן',
         pagesVisited: pageCount,
         timeTaken,
@@ -587,7 +595,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         startTitle: startTitleRef.current,
         goalTitle: goalTitleRef.current,
         path: pathRef.current.slice(),
-        ...(fastest ? { fastestPath: fastest } : {}),
       });
       finish(saved.id);
     } catch (error) {
@@ -656,9 +663,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     }
 
     const timeTaken = Number(stopClock().toFixed(3));
-    const fastest = await shortestFreePath();
     try {
-      const saved = await storeScore({
+      const saved = await saveFinishedScore({
         name: 'שחקן',
         pagesVisited: pagesRef.current,
         timeTaken,
@@ -667,7 +673,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         startTitle: startTitleRef.current,
         goalTitle: goalTitleRef.current,
         path: pathRef.current.slice(),
-        fastestPath: fastest,
       });
       onFinishRef.current({
         id: saved.id,
@@ -800,10 +805,10 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
 
   return (
     <main className="game">
-      {congratsOpen || seekingFastest ? null : (
+      {congratsOpen ? null : (
         <GameMenu onRestart={restartGame} onExit={giveUp} freePlay={mode === 'free'} />
       )}
-      {congratsOpen || seekingFastest ? null : (
+      {congratsOpen ? null : (
         <GameTools
           backUses={backUses}
           backDisabled={pages < 2 || backUses < 1 || loading}
@@ -912,22 +917,12 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         </div>
       ) : null}
 
-      {seekingFastest && !congratsOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="modal-card" role="dialog" aria-modal="true" aria-busy="true" aria-label="הדרך המהירה ביותר">
-            <h2>הדרך המהירה ביותר</h2>
-            <p className="status">מחפשים את הדרך. זה יכול לקחת כחצי דקה.</p>
-          </div>
-        </div>
-      ) : null}
-
       {congratsOpen ? (
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
             <h2>כל הכבוד!</h2>
             <p>סיימת את המשחק ב-<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
             <p>מספר הדפים שביקרת: <bdi>{pages}</bdi></p>
-            {seekingFastest ? <p className="status">מחפשים את הדרך המהירה ביותר…</p> : null}
             {saveError ? (
               <>
                 <p className="form-error">התרחשה שגיאה בשמירת הציון.</p>

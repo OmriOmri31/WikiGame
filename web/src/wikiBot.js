@@ -1,4 +1,4 @@
-import { normalizeTitle, sameTitle } from './wikipedia.js';
+import { normalizeTitle, sameTitle, titleFromHref } from './wikipedia.js';
 
 export const WIKI_BOT_NAME = 'הדרך המהירה ביותר';
 export const WIKI_BOT_UID = 'wiki-bot';
@@ -283,13 +283,211 @@ export async function canonicalTitle(title) {
   return resolved;
 }
 
+const HIDDEN_CLASS = /(?:^|\s)(?:mobileonly|mw-editsection|mw-empty-elt)(?:\s|$)/i;
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+
+function decodeHtml(value) {
+  return String(value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
+}
+
+function attr(source, name) {
+  const found = source.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i'));
+  if (!found) return '';
+  return decodeHtml(found[1] ?? found[2] ?? '');
+}
+
+function elementHidden(attrs) {
+  if (/(?:^|\s)hidden(?:\s|=|$)/i.test(attrs)) return true;
+  if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr(attrs, 'style'))) return true;
+  return HIDDEN_CLASS.test(attr(attrs, 'class'));
+}
+
+function cleanLabel(value) {
+  return normalizeTitle(String(value || '').replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ''));
+}
+
+function tagName(raw) {
+  const trimmed = raw.trim().replace(/\/\s*$/, '');
+  const split = trimmed.search(/\s/);
+  return (split === -1 ? trimmed : trimmed.slice(0, split)).toLowerCase();
+}
+
+// Links a player can actually click, with the text printed on the page.
+function extractAnchors(html) {
+  const anchors = [];
+  const source = String(html || '');
+  const stack = [];
+  let current = null;
+  let anchorDepth = 0;
+  let index = 0;
+
+  while (index < source.length) {
+    if (source.startsWith('<!--', index)) {
+      const end = source.indexOf('-->', index + 4);
+      index = end === -1 ? source.length : end + 3;
+      continue;
+    }
+    if (source[index] !== '<') {
+      const next = source.indexOf('<', index);
+      const text = source.slice(index, next === -1 ? source.length : next);
+      if (current && !stack.at(-1)?.hidden) current.label += ` ${decodeHtml(text)}`;
+      index = next === -1 ? source.length : next;
+      continue;
+    }
+
+    const end = source.indexOf('>', index + 1);
+    if (end === -1) break;
+    const raw = source.slice(index + 1, end);
+    const closing = raw[0] === '/';
+    const name = tagName(closing ? raw.slice(1) : raw);
+    index = end + 1;
+    if (!name) continue;
+
+    if (closing) {
+      if (name === 'a') {
+        anchorDepth = Math.max(0, anchorDepth - 1);
+        if (anchorDepth === 0 && current) {
+          anchors.push({ title: current.title, label: cleanLabel(current.label) });
+          current = null;
+        }
+      }
+      for (let depth = stack.length - 1; depth >= 0; depth -= 1) {
+        if (stack[depth].name === name) {
+          stack.length = depth;
+          break;
+        }
+      }
+      continue;
+    }
+
+    const attrs = raw.slice(name.length);
+    const hidden = elementHidden(attrs) || Boolean(stack.at(-1)?.hidden);
+    if (!(VOID_TAGS.has(name) || /\/\s*$/.test(raw))) stack.push({ name, hidden });
+    if (name === 'a') {
+      if (anchorDepth === 0) {
+        const parsed = titleFromHref(attr(attrs, 'href'));
+        const red = /(?:^|\s)new(?:\s|$)/i.test(attr(attrs, 'class'));
+        if (!hidden && !red && parsed.kind === 'article') {
+          current = { title: parsed.title, label: '' };
+        }
+      }
+      anchorDepth += 1;
+    } else if (current && name === 'img' && !hidden) {
+      const alt = cleanLabel(attr(attrs, 'alt'));
+      if (alt) current.label += ` ${alt}`;
+    }
+  }
+
+  return anchors;
+}
+
+function edgeKey(from, to) {
+  return `${normalizeTitle(from)}\n${normalizeTitle(to)}`;
+}
+
+function visibleVia(hits, target) {
+  if (hits.some((hit) => hit.label && sameTitle(hit.label, target))) return '';
+  const labeled = hits.find((hit) => hit.label && !sameTitle(hit.label, target));
+  if (labeled) return labeled.label;
+  const redirect = hits.find((hit) => hit.hrefTitle && !sameTitle(hit.hrefTitle, target));
+  return redirect ? normalizeTitle(redirect.hrefTitle) : '';
+}
+
+function linkStore(cache) {
+  if (cache?.anchors && cache?.redirects) return cache;
+  return { anchors: new Map(), redirects: new Map() };
+}
+
+async function pageAnchors(title, cache) {
+  const key = normalizeTitle(title);
+  if (!cache.has(key)) {
+    const pending = wikiGet({
+      action: 'parse',
+      page: key,
+      prop: 'text',
+      redirects: '1',
+      disableeditsection: '1',
+    }).then((data) => {
+      const html = typeof data.parse?.text === 'string' ? data.parse.text : '';
+      return extractAnchors(html);
+    }).catch((error) => {
+      cache.delete(key);
+      throw error;
+    });
+    cache.set(key, pending);
+  }
+  return cache.get(key);
+}
+
+async function redirectNames(title, cache) {
+  const key = normalizeTitle(title);
+  if (!cache.has(key)) {
+    const pending = pageItems(key, 'redirects', 'redirects', {
+      rdnamespace: '0',
+      rdlimit: 'max',
+    }).then((rows) => {
+      const names = new Set([key]);
+      rows.forEach((row) => {
+        const name = normalizeTitle(row.title);
+        if (name) names.add(name);
+      });
+      return names;
+    }).catch((error) => {
+      cache.delete(key);
+      throw error;
+    });
+    cache.set(key, pending);
+  }
+  return cache.get(key);
+}
+
+// `via` is the text a player has to find when the article title itself is not
+// written on the link. A hop with no clickable anchor is rejected.
+export async function clickableVias(titles, cache = null) {
+  const store = linkStore(cache);
+  const path = (Array.isArray(titles) ? titles : []).map((title) => normalizeTitle(title));
+  if (path.length < 2) return { ok: true, via: [], missing: [] };
+  const via = [];
+  const missing = [];
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const from = path[index];
+    const to = path[index + 1];
+    if (!from || !to) {
+      missing.push(edgeKey(from, to));
+      via.push('');
+      continue;
+    }
+    const [anchors, names] = await Promise.all([
+      pageAnchors(from, store.anchors),
+      redirectNames(to, store.redirects),
+    ]);
+    const hits = anchors
+      .filter((anchor) => names.has(anchor.title))
+      .map((anchor) => ({ hrefTitle: anchor.title, label: anchor.label }));
+    if (hits.length === 0) {
+      missing.push(edgeKey(from, to));
+      via.push('');
+      continue;
+    }
+    via.push(visibleVia(hits, to));
+  }
+  return { ok: missing.length === 0, via, missing };
+}
+
 // Shortest clickable route. Forward follows article links; backward follows
 // pages that link here, including links that only name a redirect.
-// `via` names that redirect when the link title differs from the article.
-export async function findShortestPath(startTitle, goalTitle, { maxPages = WIKI_BOT_MAX_PAGES } = {}) {
+// The route is then checked against the rendered article. `via` is the visible
+// link text when that text is not the next article's title.
+async function searchRoute(start, goal, maxPages, blocked, resolveCache, outgoingCache, incomingCache) {
   const startedAt = performance.now();
-  const resolveCache = new Map();
-  const [start, goal] = await resolveTitles([startTitle, goalTitle], resolveCache);
   if (!start || !goal) {
     const error = new Error('missing');
     error.code = 'missingtitle';
@@ -303,9 +501,6 @@ export async function findShortestPath(startTitle, goalTitle, { maxPages = WIKI_
       timeTaken: Number(((performance.now() - startedAt) / 1000).toFixed(3)),
     };
   }
-
-  const outgoingCache = new Map();
-  const incomingCache = new Map();
 
   function outgoing(title) {
     return cachedList(outgoingCache, title, async (key) => {
@@ -384,6 +579,9 @@ export async function findShortestPath(startTitle, goalTitle, { maxPages = WIKI_
         const edge = { title: current, via: neighbor.via || '' };
         const nextPages = currentPages + 1;
         if (!name || nextPages > maxPages) return;
+        const from = expandForward ? current : name;
+        const to = expandForward ? name : current;
+        if (blocked.has(edgeKey(from, to))) return;
         if (expandForward) {
           if (distB.has(name)) {
             const total = nextPages + distB.get(name) - 1;
@@ -433,54 +631,67 @@ export async function findShortestPath(startTitle, goalTitle, { maxPages = WIKI_
   return null;
 }
 
-function chooseVia(names) {
-  const unique = [];
-  names.forEach((name) => {
-    if (name && !unique.includes(name)) unique.push(name);
-  });
-  unique.sort((a, b) => a.length - b.length || a.localeCompare(b, 'he'));
-  return unique[0] || '';
-}
-
-async function linkVia(from, to) {
-  const redirects = await pageItems(to, 'redirects', 'redirects', {
-    rdnamespace: '0',
-    rdlimit: 'max',
-  });
-  const names = [to, ...redirects.map((row) => normalizeTitle(row.title))]
-    .filter((name) => name && !name.includes('|'));
-  const hits = [];
-  for (let index = 0; index < names.length; index += 50) {
-    const chunk = names.slice(index, index + 50);
-    const rows = await pageItems(from, 'links', 'links', {
-      plnamespace: '0',
-      pllimit: 'max',
-      pltitles: chunk.join('|'),
-    });
-    rows.forEach((row) => {
-      const name = normalizeTitle(row.title);
-      if (name) hits.push(name);
-    });
+export async function findShortestPath(startTitle, goalTitle, { maxPages = WIKI_BOT_MAX_PAGES } = {}) {
+  const startedAt = performance.now();
+  const resolveCache = new Map();
+  const outgoingCache = new Map();
+  const incomingCache = new Map();
+  const renderedCache = { anchors: new Map(), redirects: new Map() };
+  const blocked = new Set();
+  const [start, goal] = await resolveTitles([startTitle, goalTitle], resolveCache);
+  if (!start || !goal) {
+    const error = new Error('missing');
+    error.code = 'missingtitle';
+    throw error;
   }
-  if (hits.some((name) => sameTitle(name, to))) return '';
-  return chooseVia(hits.filter((name) => !sameTitle(name, to)));
-}
+  if (sameTitle(start, goal)) {
+    return {
+      path: [start],
+      via: [],
+      pagesVisited: 1,
+      timeTaken: Number(((performance.now() - startedAt) / 1000).toFixed(3)),
+    };
+  }
 
-// Link titles a player has to click between stored articles, when the link
-// only exists as a redirect. Empty string means the article title itself is linked.
-export async function pathLinkNames(titles) {
-  const path = titles.map((title) => normalizeTitle(title)).filter(Boolean);
-  if (path.length < 2) return [];
-  const notes = [];
-  for (let index = 0; index < path.length - 1; index += 1) {
-    try {
-      notes.push(await linkVia(path[index], path[index + 1]));
-    } catch (error) {
-      console.error(error);
-      notes.push('');
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const found = await searchRoute(
+      start,
+      goal,
+      maxPages,
+      blocked,
+      resolveCache,
+      outgoingCache,
+      incomingCache,
+    );
+    if (!found) return null;
+    const notes = await clickableVias(found.path, renderedCache);
+    if (notes.ok && notes.via.length === found.path.length - 1) {
+      return {
+        path: found.path,
+        via: notes.via,
+        pagesVisited: found.path.length,
+        timeTaken: Number(((performance.now() - startedAt) / 1000).toFixed(3)),
+      };
     }
+    const before = blocked.size;
+    notes.missing.forEach((key) => blocked.add(key));
+    if (blocked.size === before) return null;
   }
-  return notes;
+  return null;
+}
+
+// Visible link text between stored articles. Empty means the article title
+// itself is what the player clicks.
+export async function pathLinkNames(titles) {
+  const path = (Array.isArray(titles) ? titles : []).map((title) => normalizeTitle(title)).filter(Boolean);
+  if (path.length < 2) return [];
+  try {
+    const notes = await clickableVias(path);
+    return notes.via;
+  } catch (error) {
+    console.error(error);
+    return path.slice(0, -1).map(() => '');
+  }
 }
 
 export function isWikiBot(row) {

@@ -896,6 +896,21 @@ mark.page-find.is-current {
 
 .article-body .wikitable th { background: var(--table-head); color: var(--label); }
 
+html[data-theme="dark"] .article-body [bgcolor] {
+  background-color: #1c1c1e !important;
+}
+
+html[data-theme="dark"] .article-body :where(td, th) {
+  color: #fff;
+  font-weight: 600;
+  -webkit-font-smoothing: auto;
+}
+
+html[data-theme="dark"] .article-body :where(td, th) :where(a, a:visited) {
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+}
+
 .article-body .reflist,
 .article-body ol.references {
   font-size: 0.88rem;
@@ -1174,6 +1189,13 @@ body:has(.intro-card) {
 .free-route bdi {
   color: var(--label);
   font-weight: 600;
+}
+
+.free-search {
+  margin: 0;
+  padding: 0 14px 8px;
+  text-align: start;
+  font-size: 0.92rem;
 }
 
 .give-up-mark {
@@ -2238,6 +2260,7 @@ body:has(.stage) { background: #e7f0fb; }
 }
 
 .stage .free-route,
+.stage .free-search,
 .stage .path-sep,
 .stage .dots,
 .stage .give-up-mark { color: var(--stage-muted); }
@@ -2833,8 +2856,31 @@ html[data-theme="dark"] .stage-home input {
   font-size: 0.95rem;
 }
 
-.desk-path {
+.desk-path-block {
   margin: 0 0 10px;
+}
+
+.desk-path {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+}
+
+.desk-path .path-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.desk-path .path-via {
+  color: var(--stage-ink);
+  background: color-mix(in srgb, var(--stage-accent) 18%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
 .desk-actions {

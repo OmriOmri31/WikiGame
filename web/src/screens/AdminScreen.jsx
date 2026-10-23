@@ -11,10 +11,10 @@ import { auth } from '../firebase';
 import Stage from '../Stage';
 import { formatDuration } from '../time';
 import { REASONER_NAME } from '../reasonerBot';
-import { WIKI_BOT_NAME, suggestArticles } from '../wikiBot';
+import { clickableVias, suggestArticles, WIKI_BOT_NAME } from '../wikiBot';
 import { SEED_USED_TITLES } from '../usedArticles';
 import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
-import { askDeskModel, runBfs, runReasoner } from '../lotteryBots';
+import { askDeskModel, confirmBfsResult, runBfs, runReasoner } from '../lotteryBots';
 import {
   ensureQueue,
   ensureUsedTitles,
@@ -156,25 +156,56 @@ function pathTitles(result) {
   return result.path.map((title) => normalizeTitle(title)).filter(Boolean);
 }
 
-function DeskPath({ result }) {
+function DeskPath({ result, verify, onVia }) {
   const titles = pathTitles(result);
+  const stored = Array.isArray(result?.pathVia) ? result.pathVia.map((item) => item || '') : [];
+  const storedKey = stored.join('\n');
+  const titleKey = titles.join('\n');
+  const [vias, setVias] = useState(stored);
+  const [checking, setChecking] = useState(Boolean(verify) && titles.length > 1);
+
+  useEffect(() => {
+    if (!verify || titles.length < 2) {
+      setVias(stored);
+      setChecking(false);
+      return undefined;
+    }
+    let cancel = false;
+    setChecking(true);
+    clickableVias(titles).then((notes) => {
+      if (cancel) return;
+      setChecking(false);
+      if (!notes.ok) return;
+      setVias(notes.via);
+      if (notes.via.join('\n') !== storedKey) onVia?.(notes.via);
+    }).catch((error) => {
+      console.error(error);
+      if (!cancel) setChecking(false);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [verify, titleKey, storedKey]);
+
   if (titles.length === 0) return null;
-  const vias = Array.isArray(result.pathVia) ? result.pathVia : [];
   return (
-    <p className="path-line desk-path" dir="rtl">
-      {titles.map((title, index) => {
-        const via = index > 0 ? (vias[index - 1] || '') : '';
-        return (
-          <span className="path-step" key={`${title}-${index}`}>
-            {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
-            {via ? <span className="path-via">הפניה: <bdi>{via}</bdi></span> : null}
-            <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
-              <bdi>{title}</bdi>
-            </a>
-          </span>
-        );
-      })}
-    </p>
+    <div className="desk-path-block">
+      {checking ? <p className="status path-via-status">בודקים את נוסח הקישור בדפים…</p> : null}
+      <p className="path-line desk-path" dir="rtl">
+        {titles.map((title, index) => {
+          const via = index > 0 ? (vias[index - 1] || '') : '';
+          return (
+            <span className="path-step" key={`${title}-${index}`}>
+              {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
+              {via ? <span className="path-via">לחצו על <bdi>{via}</bdi></span> : null}
+              <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
+                <bdi>{title}</bdi>
+              </a>
+            </span>
+          );
+        })}
+      </p>
+    </div>
   );
 }
 
@@ -303,6 +334,37 @@ function Desk({ user, onPlay, onBack }) {
   const [openPaths, setOpenPaths] = useState({});
 
   useEffect(() => () => window.clearTimeout(suggestTimer.current), []);
+
+  useEffect(() => {
+    if (!board) return undefined;
+    let cancelled = false;
+    const pending = [];
+    board.slots.forEach((slot, index) => {
+      const bfs = slot.bfs;
+      if (!bfs || bfs.checked || bfs.status === 'error' || bfs.gaveUp) return;
+      if (!Array.isArray(bfs.path) || bfs.path.length < 2) return;
+      if (runningRef.current.has(index)) return;
+      pending.push({ index, slot });
+    });
+    if (pending.length === 0) return undefined;
+
+    (async () => {
+      for (const item of pending) {
+        if (cancelled) return;
+        try {
+          const next = await confirmBfsResult(item.slot.bfs);
+          if (cancelled || !next || next === item.slot.bfs) continue;
+          await saveSlotResult(item.index, 'bfs', item.slot.startTitle, item.slot.goalTitle, next);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [board, runs]);
 
   useEffect(() => {
     let live = true;
@@ -584,7 +646,22 @@ function Desk({ user, onPlay, onBack }) {
                           </button>
                         ) : null}
                       </div>
-                      {open && available ? <DeskPath result={result} /> : null}
+                      {key === 'bfs' && result && !result.checked && result.status !== 'error' && !result.gaveUp && pathTitles(result).length > 1 ? (
+                        <p className="status path-via-status">בודקים שהקישורים מופיעים בדפים…</p>
+                      ) : null}
+                      {open && available ? (
+                        <DeskPath
+                          result={result}
+                          verify={key === 'bfs'}
+                          onVia={key === 'bfs' ? (via) => {
+                            saveSlotResult(index, 'bfs', slot.startTitle, slot.goalTitle, {
+                              ...result,
+                              pathVia: via,
+                              checked: true,
+                            });
+                          } : null}
+                        />
+                      ) : null}
                     </div>
                   );
                 })}

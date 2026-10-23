@@ -23,7 +23,14 @@ service cloud.firestore {
       // Anyone may save a score. The official bot name is reserved for that bot.
       allow create: if !isReservedBotName()
         || request.resource.data.uid == 'wiki-reasoner';
-      allow update, delete: if false; // Prevent updates and deletes
+      // Scores stay fixed. The owner may attach the shortest path once, after it is found.
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fastestPath'])
+        && !resource.data.keys().hasAny(['fastestPath'])
+        && request.resource.data.fastestPath is list
+        && request.resource.data.fastestPath.size() <= 25;
+      allow delete: if false;
     }
     // The next five daily pairs, and the pool of articles that already went live.
     // Only the desk owner can read or change them.

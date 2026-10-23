@@ -259,7 +259,7 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
             <h2 id="give-up-title">לוותר על המשחק?</h2>
             <p id="give-up-body" className="lede">
               {freePlay
-                ? 'אחרי הוויתור תופיע הדרך המהירה ביותר בטבלה.'
+                ? 'המשחק נשמר בטבלה. הדרך המהירה ביותר תופיע שם ברגע שתימצא, ואפשר להמשיך למשחק אחר.'
                 : 'ההתקדמות בסיבוב הזה לא תישמר.'}
             </p>
             <button className="primary" type="button" autoFocus onClick={cancelGiveUp}>

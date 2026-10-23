@@ -4,6 +4,7 @@ import { publicName } from '../account';
 import { topAndPins, rankOf } from '../boardLayout';
 import { enterFullscreen } from '../fullscreen';
 import { db } from '../firebase';
+import { subscribeFastestPaths } from '../fastestSearch';
 import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
 import ThemeButton from '../ThemeButton';
@@ -125,7 +126,7 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, s
   );
 }
 
-function FreePlayRow({ row, highlighted, onShowPath, onShowFastest, onReplay, allowReplay }) {
+function FreePlayRow({ row, highlighted, searching, onShowPath, onShowFastest, onReplay, allowReplay }) {
   return (
     <div
       id={`score-${row.id}`}
@@ -142,6 +143,9 @@ function FreePlayRow({ row, highlighted, onShowPath, onShowFastest, onReplay, al
         <bdi>{row.goalTitle || '—'}</bdi>
         {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
       </p>
+      {searching ? (
+        <p className="status free-search" role="status">מחפשים את הדרך המהירה ביותר…</p>
+      ) : null}
       <ScoreActions
         row={row}
         onShowPath={onShowPath}
@@ -163,7 +167,7 @@ function PathLine({ titles, vias }) {
         return (
           <span className="path-step" key={`${title}-${index}`}>
             {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
-            {via ? <span className="path-via">הפניה: <bdi>{via}</bdi></span> : null}
+            {via ? <span className="path-via">לחצו על <bdi>{via}</bdi></span> : null}
             <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
               <bdi>{title}</bdi>
             </a>
@@ -190,10 +194,13 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [botPhase, setBotPhase] = useState('idle');
   const [reloadToken, setReloadToken] = useState(0);
   const [pathView, setPathView] = useState(null);
+  const [fastestLive, setFastestLive] = useState({ pendingIds: [], paths: {} });
   const [hopNotes, setHopNotes] = useState(null);
   const pathDialogRef = useRef(null);
   const onHomeRef = useRef(onHome);
   onHomeRef.current = onHome;
+
+  useEffect(() => subscribeFastestPaths(setFastestLive), []);
 
   useEffect(() => subscribeBot((next) => {
     setBotPhase(next);
@@ -534,17 +541,24 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                     <span>צעדים</span>
                     <span>זמן</span>
                   </div>
-                  {freePlays.map((row) => (
-                    <FreePlayRow
-                      key={row.id}
-                      row={row}
-                      highlighted={highlightMode === 'free' && row.id === highlightId}
-                      onShowPath={showPlayed}
-                      onShowFastest={showFastest}
-                      onReplay={replay}
-                      allowReplay
-                    />
-                  ))}
+                  {freePlays.map((row) => {
+                    const livePath = Array.isArray(row.fastestPath) ? null : fastestLive.paths[row.id];
+                    const shown = Array.isArray(livePath) ? { ...row, fastestPath: livePath } : row;
+                    const searching = !Array.isArray(shown.fastestPath)
+                      && fastestLive.pendingIds.includes(row.id);
+                    return (
+                      <FreePlayRow
+                        key={row.id}
+                        row={shown}
+                        searching={searching}
+                        highlighted={highlightMode === 'free' && row.id === highlightId}
+                        onShowPath={showPlayed}
+                        onShowFastest={showFastest}
+                        onReplay={replay}
+                        allowReplay
+                      />
+                    );
+                  })}
                 </div>
               ) : null}
             </section>

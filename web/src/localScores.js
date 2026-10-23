@@ -40,3 +40,15 @@ export function saveLocalScore(score) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return row;
 }
+
+export function updateLocalFastestPath(id, fastestPath) {
+  if (!id || !Array.isArray(fastestPath)) return;
+  const next = loadLocalScores().map((row) => (
+    row.id === id ? { ...row, fastestPath } : row
+  ));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.error(error);
+  }
+}

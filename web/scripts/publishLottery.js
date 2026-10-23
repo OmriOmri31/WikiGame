@@ -10,7 +10,7 @@ import {
 import { canonicalTitle, WIKI_BOT_NAME, WIKI_BOT_UID, botScoreId } from '../src/wikiBot.js';
 import { REASONER_NAME, REASONER_UID, reasonerScoreId } from '../src/reasonerBot.js';
 import { geminiComplete } from '../src/geminiDirect.js';
-import { runBfs, runReasoner } from '../src/lotteryBots.js';
+import { confirmBfsResult, runBfs, runReasoner } from '../src/lotteryBots.js';
 import {
   LOTTERY_DAYS,
   appendPairs,
@@ -50,6 +50,18 @@ async function solveSlot(slot) {
     next.reasoner = await runReasoner(next.startTitle, next.goalTitle, geminiComplete);
   }
   return next;
+}
+
+async function polishBfs(slot) {
+  if (botMissing(slot.bfs) || slot.bfs.gaveUp) return slot;
+  const confirmed = await confirmBfsResult(slot.bfs);
+  if (botMissing(confirmed)) {
+    console.log(`rechecking ${slot.startTitle} -> ${slot.goalTitle}`);
+    return { ...slot, bfs: await runBfs(slot.startTitle, slot.goalTitle) };
+  }
+  if (!confirmed?.checked) throw new Error('unverified path');
+  if (confirmed === slot.bfs) return slot;
+  return { ...slot, bfs: confirmed };
 }
 
 async function loadBoard() {
@@ -154,6 +166,8 @@ async function publishSlot(slot) {
   await rememberPlayed(start, goal);
   console.log(`published ${start} -> ${goal}`);
   if (slot.bfs && slot.bfs.status !== 'error') {
+    const linked = !slot.bfs.gaveUp && Array.isArray(slot.bfs.path) && slot.bfs.path.length > 1;
+    if (linked && !slot.bfs.checked) throw new Error('unverified path');
     await createScore(botScoreId(stamp, start, goal), scoreBody('bfs', slot.bfs, start, goal, stamp));
   }
   if (slot.reasoner && slot.reasoner.status !== 'error') {
@@ -185,6 +199,12 @@ async function main() {
   if (botMissing(head.bfs) || botMissing(head.reasoner)) {
     console.log(`solving ${head.startTitle} -> ${head.goalTitle}`);
     slots[0] = await solveSlot(head);
+    await saveBoard(slots, board.publishedDateKey);
+  }
+
+  const polished = await polishBfs(slots[0]);
+  if (polished !== slots[0]) {
+    slots[0] = polished;
     await saveBoard(slots, board.publishedDateKey);
   }
 
