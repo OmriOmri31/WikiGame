@@ -12,34 +12,6 @@ const STEPS = [
   { src: '/tutorial/09.png', line: 'מסיימים כשקישור מדף אמיתי מגיע לכאן.' },
 ];
 
-const SEEN_KEY = 'wikigame.tutorialSeen';
-const PRIOR_KEYS = ['wikigame.introHide', 'wikigame.localScores', 'wikigame.session'];
-
-export function tutorialSeen() {
-  try {
-    return localStorage.getItem(SEEN_KEY) === '1';
-  } catch {
-    return true;
-  }
-}
-
-export function markTutorialSeen() {
-  try {
-    localStorage.setItem(SEEN_KEY, '1');
-  } catch {
-    // Closing still ends the tutorial for this visit.
-  }
-}
-
-export function isFirstAppOpen() {
-  try {
-    if (localStorage.getItem(SEEN_KEY) === '1') return false;
-    return PRIOR_KEYS.every((key) => !localStorage.getItem(key));
-  } catch {
-    return false;
-  }
-}
-
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
