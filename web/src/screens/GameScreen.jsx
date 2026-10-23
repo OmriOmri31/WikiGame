@@ -470,18 +470,19 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         document.querySelector('.search-tool')?.focus({ preventScroll: true });
         return;
       }
-      if (event.key === 'F3') {
-        if (!searchOpenRef.current) return;
+      const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
+      const findNext = event.key === 'F3' || (mod && event.code === 'KeyG');
+      if (findNext) {
+        // Block the browser's find-next too, and step the in-game find instead.
         event.preventDefault();
-        stepFind(event.shiftKey ? -1 : 1);
+        event.stopPropagation();
+        if (searchOpenRef.current) stepFind(event.shiftKey ? -1 : 1);
         return;
       }
-      const findShortcut = (event.ctrlKey || event.metaKey)
-        && !event.altKey
-        && !event.shiftKey
-        && event.code === 'KeyF';
-      if (!findShortcut) return;
+      if (!(mod && event.code === 'KeyF')) return;
+      // Ctrl/Cmd+F (and Shift variants) never reach the browser's own find.
       event.preventDefault();
+      event.stopPropagation();
       if (event.repeat || !currentTitleRef.current) return;
       const locked = searchTitleRef.current
         && !sameTitle(searchTitleRef.current, currentTitleRef.current);
@@ -497,8 +498,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       }
       openSearch();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   useEffect(() => {
