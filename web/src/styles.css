@@ -3133,3 +3133,22 @@ html[data-theme="dark"] .stage-board .stage-bar {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+
+/* Account gate: nickname choice */
+.account-gate .form-note { line-height: 1.5; }
+.nickname-choices {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.nickname-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--stage-fill, rgba(120, 120, 128, 0.12));
+  cursor: pointer;
+}
+.nickname-choice.is-disabled { opacity: 0.5; cursor: default; }
+.nickname-choice input { margin: 0; }
