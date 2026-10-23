@@ -3097,3 +3097,41 @@ html[data-theme="dark"] .stage-home input {
   }
 }
 
+
+/* Scores: center the "צעדים" / "זמן" headers (and the free-games date row keeps start) over their values */
+.score-head > span:nth-last-child(-n+2) {
+  text-align: center;
+  align-self: start;
+}
+
+/* Game: links that lead outside Hebrew Wikipedia are not playable — show them grey */
+.article-body a.external,
+.article-body a[rel~="mw:ExtLink"],
+.article-body a[rel~="mw:WikiLink/Interwiki"],
+.article-body a.extiw,
+.article-body a[href^="http"]:not([href*="//he.wikipedia.org/"]):not([href*="//he.m.wikipedia.org/"]),
+.article-body a[href^="//"]:not([href^="//he.wikipedia.org/"]):not([href^="//he.m.wikipedia.org/"]) {
+  color: #636a70 !important;
+  text-decoration: none;
+  cursor: default;
+}
+html[data-theme="dark"] .article-body a.external,
+html[data-theme="dark"] .article-body a[rel~="mw:ExtLink"],
+html[data-theme="dark"] .article-body a[rel~="mw:WikiLink/Interwiki"],
+html[data-theme="dark"] .article-body a.extiw,
+html[data-theme="dark"] .article-body a[href^="http"]:not([href*="//he.wikipedia.org/"]):not([href*="//he.m.wikipedia.org/"]),
+html[data-theme="dark"] .article-body a[href^="//"]:not([href^="//he.wikipedia.org/"]):not([href^="//he.m.wikipedia.org/"]) {
+  color: #a7adb3 !important;
+}
+
+/* ==== TEST: Wikipedia fonts (Vector skin). Delete this block to restore previous fonts. ==== */
+:root { --font: sans-serif; }
+body,
+.stage,
+.stage button,
+.stage input { font-family: sans-serif; }
+.wordmark em,
+.stage h1 em,
+.stage-home .greeting,
+h1, h2 { font-family: 'Linux Libertine', 'Georgia', 'Times', serif; }
+/* ==== END TEST: Wikipedia fonts ==== */

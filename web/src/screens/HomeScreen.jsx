@@ -301,10 +301,10 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
         </header>
         <section className="home-actions" aria-label="התחלה">
           {user ? <h2 className="greeting">שלום, {greeting}</h2> : null}
-          <button className="primary" type="button" onClick={startGame}>התחל</button>
+          <button className="primary" type="button" onClick={startGame}>שחק משחק יומי</button>
           <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
           <button className="text-button home-board-link" type="button" onClick={onLeaderboard}>
-            טבלת שיאים יומית
+            תוצאות
           </button>
           {onDesk ? (
             <button className="text-button home-board-link" type="button" onClick={onDesk}>
