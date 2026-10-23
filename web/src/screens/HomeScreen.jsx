@@ -15,7 +15,8 @@ import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
-import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen } from './IntroAlert';
+import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen, skipIntroThisSession } from './IntroAlert';
+import Tutorial, { isFirstAppOpen, markTutorialSeen } from './Tutorial';
 import { useTheme } from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 
@@ -56,10 +57,21 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
-  const [showIntro, setShowIntro] = useState(() => claimIntroThisSession(Boolean(user) && introSeen()));
+  const [tutorialOpen, setTutorialOpen] = useState(isFirstAppOpen);
+  const [showIntro, setShowIntro] = useState(() => {
+    if (isFirstAppOpen()) {
+      skipIntroThisSession();
+      return false;
+    }
+    return claimIntroThisSession(Boolean(user) && introSeen());
+  });
   const dismissIntro = useCallback((hideForever) => {
     if (hideForever) markIntroSeen();
     setShowIntro(false);
+  }, []);
+  const closeTutorial = useCallback(() => {
+    markTutorialSeen();
+    setTutorialOpen(false);
   }, []);
 
   useEffect(() => {
@@ -272,6 +284,9 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
 
   return (
     <Stage className="stage-home">
+      <button className="how-to-play" type="button" onClick={() => setTutorialOpen(true)}>
+        איך משחקים?
+      </button>
       <main className="home-page">
         <header className="home-hero">
           <h1 className="home-title">
@@ -473,7 +488,8 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           </div>
         </section>
       </main>
-      <IntroAlert open={showIntro} rememberable={Boolean(user)} onDismiss={dismissIntro} />
+      <IntroAlert open={showIntro && !tutorialOpen} rememberable={Boolean(user)} onDismiss={dismissIntro} />
+      {tutorialOpen ? <Tutorial onClose={closeTutorial} /> : null}
     </Stage>
   );
 }
