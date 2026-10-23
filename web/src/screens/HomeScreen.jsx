@@ -20,8 +20,8 @@ import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
 import Stage from '../Stage';
-import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen, skipIntroThisSession } from './IntroAlert';
-import Tutorial, { isFirstAppOpen, markTutorialSeen } from './Tutorial';
+import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen } from './IntroAlert';
+import Tutorial from './Tutorial';
 import { useTheme } from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
 
@@ -64,20 +64,13 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
-  const [tutorialOpen, setTutorialOpen] = useState(isFirstAppOpen);
-  const [showIntro, setShowIntro] = useState(() => {
-    if (isFirstAppOpen()) {
-      skipIntroThisSession();
-      return false;
-    }
-    return claimIntroThisSession(Boolean(user) && introSeen());
-  });
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [showIntro, setShowIntro] = useState(() => claimIntroThisSession(Boolean(user) && introSeen()));
   const dismissIntro = useCallback((hideForever) => {
     if (hideForever) markIntroSeen();
     setShowIntro(false);
   }, []);
   const closeTutorial = useCallback(() => {
-    markTutorialSeen();
     setTutorialOpen(false);
   }, []);
 
