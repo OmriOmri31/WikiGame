@@ -4,6 +4,7 @@ import { ADMIN_UID, isAdmin } from './admin';
 import { startDailyBot } from './botRun';
 import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
+import { rememberLinkFromError } from './linking';
 import { loadProfile, needsEmailVerification, pendingNickname } from './nickname';
 import { NicknameScreen, VerifyEmailScreen } from './screens/AccountGate';
 import { exitFullscreen } from './fullscreen';
@@ -115,6 +116,10 @@ export default function App() {
     let active = true;
     redirectResult.catch((error) => {
       console.error(error);
+      if (rememberLinkFromError(error)) {
+        if (active) setAuthNotice('link');
+        return;
+      }
       if (active) setAuthNotice(authErrorMessage(error));
     });
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
