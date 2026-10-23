@@ -418,12 +418,10 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
       </header>
       <main className="board">
         <div className="board-scroll">
-          <p className="kicker">טבלה</p>
-          <h1>השיאים</h1>
           <p className="lede">הדירוג לפי מספר הצעדים, ואחר כך לפי הזמן.</p>
-          {highlightId ? (
+          {highlightId && savedOnDevice ? (
             <p className="saved-note" role="status">
-              {savedOnDevice ? 'התוצאה נשמרה במכשיר הזה.' : 'התוצאה שלכם מסומנת בטבלה.'}
+              התוצאה נשמרה במכשיר הזה.
             </p>
           ) : null}
 
@@ -438,7 +436,6 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
 
               {!loading && !boardOpen && playerScore ? (
                 <div className="mine-strip">
-                  <h3>התוצאה שלי</h3>
                   <div className="score-table">
                     <div className="score-head">
                       <span>מקום</span>
