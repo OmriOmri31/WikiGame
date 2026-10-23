@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import admin from 'firebase-admin';
+import { cert, initializeApp } from 'firebase-admin/app';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import {
   drawDistinctPair,
   israelDateKey,
@@ -18,14 +19,14 @@ import {
   takenPairKeys,
 } from '../src/lotteryModel.js';
 
-const boardRef = () => admin.firestore().collection('lotteryQueue').doc('board');
-const dailyRef = () => admin.firestore().collection('daily').doc('articles');
+const boardRef = () => getFirestore().collection('lotteryQueue').doc('board');
+const dailyRef = () => getFirestore().collection('daily').doc('articles');
 
 function credential() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (raw) return admin.credential.cert(JSON.parse(raw));
+  if (raw) return cert(JSON.parse(raw));
   const file = new URL('../../firebase-key.json', import.meta.url);
-  return admin.credential.cert(JSON.parse(readFileSync(file, 'utf8')));
+  return cert(JSON.parse(readFileSync(file, 'utf8')));
 }
 
 function botMissing(result) {
@@ -74,7 +75,7 @@ function scoreBody(kind, result, start, goal, stamp) {
     path: result.path,
     startTitle: result.path[0] || start,
     goalTitle,
-    timestamp: admin.firestore.Timestamp.fromMillis(stamp),
+    timestamp: Timestamp.fromMillis(stamp),
     ...(result.gaveUp ? { gaveUp: true } : {}),
   };
   if (kind === 'bfs') {
@@ -96,7 +97,7 @@ function scoreBody(kind, result, start, goal, stamp) {
 
 async function createScore(id, data) {
   try {
-    await admin.firestore().collection('scores').doc(id).create(data);
+    await getFirestore().collection('scores').doc(id).create(data);
     console.log(`stored ${id}`);
   } catch (error) {
     if (error?.code === 6 || error?.code === 'already-exists') {
@@ -114,7 +115,7 @@ async function publishSlot(slot) {
   await dailyRef().set({
     startArticleTitle: start,
     targetArticleTitle: goal,
-    timestamp: admin.firestore.Timestamp.fromMillis(stamp),
+    timestamp: Timestamp.fromMillis(stamp),
     lotteryDateKey: israelDateKey(new Date(stamp)),
   });
   console.log(`published ${start} -> ${goal}`);
@@ -144,34 +145,43 @@ async function main() {
   }
 
   const slots = board.slots.slice();
-  for (let index = 0; index < slots.length; index += 1) {
-    if (!botMissing(slots[index].bfs) && !botMissing(slots[index].reasoner)) continue;
-    console.log(`solving ${slots[index].startTitle} -> ${slots[index].goalTitle}`);
-    slots[index] = await solveSlot(slots[index]);
+  const head = slots[0];
+  if (!head?.startTitle || !head?.goalTitle) throw new Error('empty queue');
+  if (botMissing(head.bfs) || botMissing(head.reasoner)) {
+    console.log(`solving ${head.startTitle} -> ${head.goalTitle}`);
+    slots[0] = await solveSlot(head);
     await saveBoard(slots, board.publishedDateKey);
   }
 
-  const ready = slots[0];
-  if (!ready?.startTitle || !ready?.goalTitle) throw new Error('empty queue');
-  await publishSlot(ready);
+  await publishSlot(slots[0]);
 
   const drawn = await drawDistinctPair(takenPairKeys(slots));
   const shifted = shiftBoard(slots, today, drawn);
   const last = shifted.length - 1;
   console.log(`new fifth ${shifted[last].startTitle} -> ${shifted[last].goalTitle}`);
+  await saveBoard(shifted, today);
+  console.log(`queue now starts ${shifted[0].dateKey}`);
+
   try {
-    shifted[last] = await solveSlot(shifted[last]);
+    if (botMissing(shifted[last].bfs) || botMissing(shifted[last].reasoner)) {
+      shifted[last] = await solveSlot(shifted[last]);
+      await saveBoard(shifted, today);
+    }
+    for (let index = 0; index < last; index += 1) {
+      if (!botMissing(shifted[index].bfs) && !botMissing(shifted[index].reasoner)) continue;
+      console.log(`solving ${shifted[index].startTitle} -> ${shifted[index].goalTitle}`);
+      shifted[index] = await solveSlot(shifted[index]);
+      await saveBoard(shifted, today);
+    }
   } catch (error) {
     console.error(error);
   }
-  await saveBoard(shifted, today);
-  console.log(`queue now starts ${shifted[0].dateKey}`);
 }
 
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   try {
-    admin.initializeApp({ credential: credential() });
+    initializeApp({ credential: credential() });
   } catch (error) {
     console.error(error?.message || error);
     console.error('Set GOOGLE_SERVICE_ACCOUNT_JSON, or place firebase-key.json at the repo root.');
