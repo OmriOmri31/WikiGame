@@ -73,7 +73,11 @@ async function saveBoard(slots, publishedDateKey) {
   await boardRef().set({
     slots,
     publishedDateKey: publishedDateKey || '',
-  });
+  }, { merge: true });
+}
+
+async function saveLastPublished(entry) {
+  await boardRef().set({ lastPublished: entry }, { merge: true });
 }
 
 async function ensureUsedTitles() {
@@ -164,6 +168,12 @@ async function publishSlot(slot) {
     lotteryDateKey: israelDateKey(new Date(stamp)),
   });
   await rememberPlayed(start, goal);
+  await saveLastPublished({
+    startTitle: start,
+    goalTitle: goal,
+    stamp,
+    dateKey: israelDateKey(new Date(stamp)),
+  });
   console.log(`published ${start} -> ${goal}`);
   if (slot.bfs && slot.bfs.status !== 'error') {
     const linked = !slot.bfs.gaveUp && Array.isArray(slot.bfs.path) && slot.bfs.path.length > 1;
@@ -178,18 +188,54 @@ async function publishSlot(slot) {
   }
 }
 
-async function main() {
-  const now = new Date();
-  // The winter run of the 21:00 UTC cron lands at 23:00, still before midnight.
-  if (israelHour(now) === 23) {
-    console.log('before midnight in Israel');
+function sleep(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// GitHub starts scheduled runs late, so the workflow starts before midnight and waits here.
+async function waitForIsraelMidnight() {
+  const today = israelDateKey();
+  if (israelHour() !== 23) return;
+  console.log('waiting for midnight in Israel');
+  while (israelDateKey() === today) await sleep(5000);
+  await sleep(2000);
+}
+
+// Another writer (an old scheduled job outside this repo) can replace the daily pair with a
+// random one. Put today's queued pair back if that happened.
+async function restorePublished(board, today) {
+  const snap = await dailyRef().get();
+  const data = snap.exists ? snap.data() : {};
+  if (data?.lotteryDateKey === today) return;
+  const kept = board.lastPublished;
+  if (!kept?.startTitle || !kept?.goalTitle || kept.dateKey !== today) {
+    console.log('daily pair was replaced, and no published pair is stored to restore');
     return;
   }
+  await dailyRef().set({
+    startArticleTitle: kept.startTitle,
+    targetArticleTitle: kept.goalTitle,
+    timestamp: Timestamp.fromMillis(kept.stamp),
+    lotteryDateKey: today,
+  });
+  console.log(`restored ${kept.startTitle} -> ${kept.goalTitle}`);
+}
+
+async function main() {
+  const hour = israelHour(new Date());
+  const manual = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' || process.env.LOTTERY_FORCE === '1';
+  if (!manual && hour !== 23 && hour > 6) {
+    console.log('not near midnight in Israel');
+    return;
+  }
+  await waitForIsraelMidnight();
+  const now = new Date();
   const today = israelDateKey(now);
   const usedTitles = await ensureUsedTitles();
   let board = await ensureSlots(usedTitleSet(usedTitles));
   if (board.publishedDateKey === today) {
     console.log('already published');
+    await restorePublished(board, today);
     return;
   }
 
@@ -218,6 +264,7 @@ async function main() {
   console.log(`new fifth ${shifted[last].startTitle} -> ${shifted[last].goalTitle}`);
   await saveBoard(shifted, today);
   console.log(`queue now starts ${shifted[0].dateKey}`);
+  await restorePublished(await loadBoard(), today);
 
   try {
     if (botMissing(shifted[last].bfs) || botMissing(shifted[last].reasoner)) {

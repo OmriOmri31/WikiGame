@@ -65,6 +65,7 @@ service cloud.firestore {
       // Anyone may save a score. The official bot name is reserved for that bot.
       // Players must be verified and post under their own uid. The daily bot keeps its own path.
       allow create: if (request.resource.data.uid == 'wiki-reasoner')
+        || (request.resource.data.uid == 'wiki-bot' && request.resource.data.bot == true)
         || (!isReservedBotName()
           && isVerified()
           && request.resource.data.uid == request.auth.uid);
