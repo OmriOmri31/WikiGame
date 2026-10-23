@@ -3152,3 +3152,8 @@ html[data-theme="dark"] .stage-board .stage-bar {
 }
 .nickname-choice.is-disabled { opacity: 0.5; cursor: default; }
 .nickname-choice input { margin: 0; }
+
+/* Guest result: offer to keep it in an account */
+.saved-note p { margin: 0; }
+.saved-note .saved-note-sub { margin-top: 6px; font-weight: 500; }
+.saved-note .primary { margin-top: 12px; width: 100%; }
