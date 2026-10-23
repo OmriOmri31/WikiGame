@@ -1,3 +1,5 @@
+import { GUARD } from './findGuard';
+
 const FIND_ALL = 'page-find';
 const FIND_CURRENT = 'page-find-current';
 const MATCH_LIMIT = 300;
@@ -40,14 +42,30 @@ export function collectPageMatches(root, query) {
   let capped = false;
   let node = walker.nextNode();
   while (node) {
-    const hay = node.nodeValue.toLowerCase();
+    const raw = node.nodeValue;
+    // Search the text without the find-guard characters, then map the hit
+    // back to offsets in the real text node.
+    let hay = raw;
+    let map = null;
+    if (raw.indexOf(GUARD) >= 0) {
+      map = [];
+      let clean = '';
+      for (let i = 0; i < raw.length; i += 1) {
+        if (raw[i] === GUARD) continue;
+        map.push(i);
+        clean += raw[i];
+      }
+      map.push(raw.length);
+      hay = clean;
+    }
+    hay = hay.toLowerCase();
     let from = 0;
     while (from < hay.length) {
       const index = hay.indexOf(needle, from);
       if (index < 0) break;
       const range = new Range();
-      range.setStart(node, index);
-      range.setEnd(node, index + needle.length);
+      range.setStart(node, map ? map[index] : index);
+      range.setEnd(node, map ? map[index + needle.length - 1] + 1 : index + needle.length);
       ranges.push(range);
       if (ranges.length >= MATCH_LIMIT) {
         capped = true;
