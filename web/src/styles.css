@@ -3124,14 +3124,12 @@ html[data-theme="dark"] .article-body a[href^="//"]:not([href^="//he.wikipedia.o
   color: #a7adb3 !important;
 }
 
-/* ==== TEST: Wikipedia fonts (Vector skin). Delete this block to restore previous fonts. ==== */
-:root { --font: sans-serif; }
-body,
-.stage,
-.stage button,
-.stage input { font-family: sans-serif; }
-.wordmark em,
-.stage h1 em,
-.stage-home .greeting,
-h1, h2 { font-family: 'Linux Libertine', 'Georgia', 'Times', serif; }
-/* ==== END TEST: Wikipedia fonts ==== */
+/* Scores page: no panel behind the top bar — buttons stay in place */
+.stage-board .stage-bar,
+html[data-theme="dark"] .stage-board .stage-bar {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
