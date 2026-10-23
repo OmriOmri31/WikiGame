@@ -6,7 +6,7 @@ import { auth, redirectResult } from './firebase';
 import { authErrorMessage } from './account';
 import { rememberLinkFromError } from './linking';
 import { loadProfile, needsEmailVerification, pendingNickname } from './nickname';
-import { NicknameScreen, VerifyEmailScreen } from './screens/AccountGate';
+import { KeepNicknameScreen, NicknameScreen, VerifyEmailScreen } from './screens/AccountGate';
 import { exitFullscreen } from './fullscreen';
 import { clearGameSession, loadGameSession } from './gameSession';
 import Stage from './Stage';
@@ -180,6 +180,18 @@ export default function App() {
           user={user}
           suggested={pending}
           autoClaim={Boolean(pending)}
+          onDone={(data) => setProfile({ uid: user.uid, data, ready: true })}
+        />
+      );
+    }
+    // Google sign-in replaces the auth display name with the Google name. The saved nickname wins
+    // unless the player chooses a new one.
+    if (profile.data?.nickname && (user.displayName || '') !== profile.data.nickname) {
+      return (
+        <KeepNicknameScreen
+          key={`keep-${user.uid}`}
+          user={user}
+          nickname={profile.data.nickname}
           onDone={(data) => setProfile({ uid: user.uid, data, ready: true })}
         />
       );

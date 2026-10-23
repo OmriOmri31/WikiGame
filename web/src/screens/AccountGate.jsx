@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { sendEmailVerification, signOut } from 'firebase/auth';
+import { sendEmailVerification, signOut, updateProfile } from 'firebase/auth';
 import { auth } from '../firebase';
 import Stage from '../Stage';
 import { authErrorMessage, publicName } from '../account';
@@ -206,6 +206,104 @@ export function NicknameScreen({ user, suggested = '', autoClaim = false, onDone
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <button className="primary" type="submit" disabled={busy}>
           {busy ? 'בודק…' : 'המשך'}
+        </button>
+      </form>
+      <div className="form-links">
+        <button className="text-button danger" type="button" onClick={quietSignOut}>
+          התנתקות
+        </button>
+      </div>
+    </Shell>
+  );
+}
+
+// The account already has a nickname but the sign-in brought a different name (e.g. Google).
+export function KeepNicknameScreen({ user, nickname, onDone }) {
+  const [choice, setChoice] = useState('keep');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    if (choice === 'keep') {
+      setBusy(true);
+      try {
+        await updateProfile(user, { displayName: nickname });
+        onDone({ nickname, key: nickname.toLowerCase() });
+      } catch (keepError) {
+        console.error(keepError);
+        setError('לא הצלחנו לשמור. נסו שוב.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    const problem = nicknameProblem(name);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setBusy(true);
+    try {
+      if (!(await nicknameAvailable(name, user.uid))) {
+        setError(NICKNAME_TAKEN);
+        return;
+      }
+      // Reserves the new nickname and frees the old one in the same transaction.
+      onDone(await claimNickname(user, name));
+    } catch (claimError) {
+      console.error(claimError);
+      setError(claimError?.code === 'nickname/taken' ? NICKNAME_TAKEN : 'לא הצלחנו לשמור את הכינוי. נסו שוב.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Shell title="איזה כינוי להשתמש?">
+      <p className="form-note">לחשבון הזה כבר יש כינוי. אפשר להמשיך איתו או לבחור כינוי חדש.</p>
+      <form onSubmit={submit} noValidate>
+        <div className="nickname-choices" role="radiogroup" aria-label="בחירת כינוי">
+          <label className="nickname-choice">
+            <input
+              type="radio"
+              name="keep-choice"
+              checked={choice === 'keep'}
+              onChange={() => setChoice('keep')}
+              disabled={busy}
+            />
+            <span>להמשיך עם <bdi>{nickname}</bdi></span>
+          </label>
+          <label className="nickname-choice">
+            <input
+              type="radio"
+              name="keep-choice"
+              checked={choice === 'new'}
+              onChange={() => setChoice('new')}
+              disabled={busy}
+            />
+            <span>ליצור כינוי חדש</span>
+          </label>
+        </div>
+        {choice === 'new' ? (
+          <>
+            <label htmlFor="new-nickname">כינוי חדש</label>
+            <input
+              id="new-nickname"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              autoComplete="nickname"
+              maxLength={24}
+              disabled={busy}
+              autoFocus
+            />
+          </>
+        ) : null}
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        <button className="primary" type="submit" disabled={busy}>
+          {busy ? 'רגע…' : 'המשך'}
         </button>
       </form>
       <div className="form-links">
