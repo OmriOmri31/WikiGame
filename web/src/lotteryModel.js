@@ -69,6 +69,7 @@ export function normalizeBoard(data, now = new Date()) {
   return {
     slots: raw.map((slot, index) => normalizeSlot(slot, index, origin)),
     publishedDateKey: typeof data?.publishedDateKey === 'string' ? data.publishedDateKey : '',
+    lastPublished: data?.lastPublished && typeof data.lastPublished === 'object' ? data.lastPublished : null,
   };
 }
 
