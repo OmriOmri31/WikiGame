@@ -773,7 +773,15 @@ a:focus-visible {
 
 .article-inner.is-loading { opacity: 0.55; }
 
+@font-face {
+  font-family: WikiZW;
+  src: url('./assets/find-guard.ttf') format('truetype');
+  unicode-range: U+E000;
+  font-display: block;
+}
+
 .article-inner {
+  font-family: WikiZW, var(--font);
   width: 100%;
   max-width: 900px;
   min-width: 0;

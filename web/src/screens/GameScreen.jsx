@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
 import { rememberGuestResult } from '../guestClaim';
@@ -8,6 +8,7 @@ import { exitFullscreen } from '../fullscreen';
 import { clearGameSession, saveGameSession } from '../gameSession';
 import GameMenu from '../GameMenu';
 import GameTools, { FindBar } from '../GameTools';
+import { guardText, onGuardedCopy } from '../findGuard';
 import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
 import Sheet from '../Sheet';
 import { adoptFastestSearch, beginFastestSearch, fastestPathNow, publishFastestPath } from '../fastestSearch';
@@ -437,6 +438,11 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     return undefined;
   }, [article]);
 
+  // Make the browser's own find-in-page unable to match article words.
+  useLayoutEffect(() => {
+    guardText(articleRef.current);
+  }, [articleHtml, article?.title]);
+
   useEffect(() => {
     const root = articleRef.current;
     clearPageFind(root);
@@ -861,6 +867,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         <article
           className={`article-inner mw-parser-output${loading ? ' is-loading' : ''}`}
           ref={articleRef}
+          onCopy={onGuardedCopy}
         >
           <h1>{article.title}</h1>
           <div
