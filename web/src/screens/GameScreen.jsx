@@ -934,8 +934,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         <div className="modal-backdrop" role="presentation">
           <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
             <h2>כל הכבוד!</h2>
-            <p>סיימת את המשחק ב-<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
-            <p>מספר הדפים שביקרת: <bdi>{pages}</bdi></p>
+            <p>סיימתם ב־<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
+            <p>מספר הדפים: <bdi>{pages}</bdi></p>
             {saveError ? (
               <>
                 <p className="form-error">התרחשה שגיאה בשמירת הציון.</p>
