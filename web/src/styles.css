@@ -3165,3 +3165,28 @@ html[data-theme="dark"] .stage-board .stage-bar {
 .saved-note p { margin: 0; }
 .saved-note .saved-note-sub { margin-top: 6px; font-weight: 500; }
 .saved-note .primary { margin-top: 12px; width: 100%; }
+
+/* iOS home-screen apps: WebKit sizes 100dvh (and the page) without the
+   home-indicator area, so the window colour shows there as a strip. Grow the
+   full-screen containers by the bottom inset so the page's own background
+   reaches the physical bottom edge; content keeps its safe-area padding. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone), (display-mode: fullscreen) {
+    html,
+    body {
+      min-height: calc(100dvh + env(safe-area-inset-bottom, 0px));
+    }
+    .splash,
+    .screen,
+    .stage,
+    .board {
+      min-height: calc(100dvh + env(safe-area-inset-bottom, 0px));
+    }
+    .game {
+      height: calc(100dvh + env(safe-area-inset-bottom, 0px));
+    }
+    .article-inner {
+      padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}
