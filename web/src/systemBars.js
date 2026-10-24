@@ -1,5 +1,5 @@
 // Keep the browser / Android navigation bar colour in step with the page
-// background, so the manifest's navy theme_color only shows on the splash.
+// background. Nothing navy is left once the app has rendered.
 function pageColor() {
   const body = getComputedStyle(document.body).backgroundColor;
   if (body && body !== 'rgba(0, 0, 0, 0)' && body !== 'transparent') return body;
