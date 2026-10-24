@@ -1,0 +1,271 @@
+/* Design C — "ריצת לילה" (Night Run).
+   Dark-first, speed-run feel: deep indigo, electric cyan→violet gradient, glowing glass panels,
+   Secular One headlines over Assistant text. Light mode becomes a soft lavender "day" version.
+   Active only when <html data-design="c">. Logic and layout are unchanged. */
+
+html[data-design="c"] {
+  --bg: #f5f4ff;
+  --paper: #fdfcff;
+  --surface: rgba(253, 252, 255, 0.86);
+  --surface-solid: #ffffff;
+  --label: #171433;
+  --secondary-label: #625e86;
+  --separator: rgba(23, 20, 51, 0.12);
+  --fill: rgba(91, 66, 243, 0.07);
+  --blue: #5b42f3;
+  --blue-pressed: #4329d6;
+  --tint: rgba(91, 66, 243, 0.1);
+  --highlight: rgba(91, 66, 243, 0.12);
+  --visited: #a1338f;
+  --radius: 14px;
+  --chrome: rgba(253, 252, 255, 0.9);
+  --chrome-fade: rgba(253, 252, 255, 0.7);
+  --table-head: #ece9ff;
+  --font: Assistant, Heebo, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --display: "Secular One", Heebo, system-ui, sans-serif;
+  --c-grad: linear-gradient(100deg, #00c2ff 0%, #5b42f3 55%, #b14bf4 100%);
+  --c-glow: 0 0 0 1px rgba(91, 66, 243, 0.18), 0 10px 30px rgba(91, 66, 243, 0.14);
+  --c-accent: #5b42f3;
+  --c-hot: #ff3d9a;
+}
+
+html[data-design="c"][data-theme="dark"] {
+  --bg: #070815;
+  --paper: #0b0c1d;
+  --surface: rgba(16, 18, 40, 0.82);
+  --surface-solid: #12142b;
+  --label: #e9e8ff;
+  --secondary-label: #9a98c4;
+  --separator: rgba(160, 156, 255, 0.16);
+  --fill: rgba(160, 156, 255, 0.09);
+  --blue: #5ee0ff;
+  --blue-pressed: #a0edff;
+  --tint: rgba(94, 224, 255, 0.12);
+  --highlight: rgba(94, 224, 255, 0.14);
+  --visited: #d39bff;
+  --chrome: rgba(11, 12, 29, 0.88);
+  --chrome-fade: rgba(11, 12, 29, 0.6);
+  --table-head: #17193a;
+  --c-grad: linear-gradient(100deg, #22d3ee 0%, #7c5cff 55%, #e04bf4 100%);
+  --c-glow: 0 0 0 1px rgba(124, 92, 255, 0.35), 0 0 24px rgba(124, 92, 255, 0.25);
+  --c-accent: #22d3ee;
+}
+
+html[data-design="c"] body { background: var(--bg); font-family: var(--font); }
+html[data-design="c"][data-theme="dark"] body { background: var(--bg); }
+
+/* ---------- Shell (home + scores) ---------- */
+html[data-design="c"] .stage,
+html[data-design="c"] .stage.stage-home {
+  --home-blue: #5b42f3;
+  --home-blue-pressed: #4329d6;
+  --home-ink: #171433;
+  --home-muted: #625e86;
+  --home-line: rgba(23, 20, 51, 0.14);
+  --stage-bg: #f5f4ff;
+  --stage-ink: #171433;
+  --stage-muted: #625e86;
+  --stage-line: rgba(23, 20, 51, 0.12);
+  --stage-panel: rgba(255, 255, 255, 0.7);
+  --stage-panel-solid: #ffffff;
+  --stage-accent: #5b42f3;
+  --stage-fill: rgba(91, 66, 243, 0.07);
+  --stage-action: #171433;
+  --stage-action-ink: #ffffff;
+  --stage-shadow: var(--c-glow);
+  --stage-glow: rgba(124, 92, 255, 0.35);
+  background: #f5f4ff;
+  color: #171433;
+  font-family: var(--font);
+}
+
+html[data-design="c"][data-theme="dark"] .stage,
+html[data-design="c"][data-theme="dark"] .stage.stage-home {
+  --home-blue: #22d3ee;
+  --home-blue-pressed: #67e8f9;
+  --home-ink: #e9e8ff;
+  --home-muted: #9a98c4;
+  --home-line: rgba(160, 156, 255, 0.2);
+  --stage-bg: #070815;
+  --stage-ink: #e9e8ff;
+  --stage-muted: #9a98c4;
+  --stage-line: rgba(160, 156, 255, 0.18);
+  --stage-panel: rgba(18, 20, 46, 0.72);
+  --stage-panel-solid: #12142b;
+  --stage-accent: #22d3ee;
+  --stage-fill: rgba(160, 156, 255, 0.08);
+  --stage-glow: rgba(124, 92, 255, 0.55);
+  background: #070815;
+  color: #e9e8ff;
+}
+
+html[data-design="c"] body:has(.stage) { background: #f5f4ff; }
+html[data-design="c"][data-theme="dark"] body:has(.stage) { background: #070815; }
+
+/* Aurora behind every shell screen, with a faint link-graph grid. */
+html[data-design="c"] .stage .atmosphere {
+  display: block;
+  background:
+    radial-gradient(520px 360px at 85% -5%, rgba(0, 194, 255, 0.22), transparent 65%),
+    radial-gradient(520px 420px at 0% 100%, rgba(177, 75, 244, 0.18), transparent 60%),
+    linear-gradient(rgba(91, 66, 243, 0.05) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(91, 66, 243, 0.05) 1px, transparent 1px) 0 0 / 28px 28px,
+    var(--stage-bg);
+}
+html[data-design="c"][data-theme="dark"] .stage .atmosphere {
+  background:
+    radial-gradient(520px 360px at 85% -5%, rgba(34, 211, 238, 0.28), transparent 65%),
+    radial-gradient(560px 460px at 0% 100%, rgba(224, 75, 244, 0.22), transparent 60%),
+    linear-gradient(rgba(160, 156, 255, 0.06) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(160, 156, 255, 0.06) 1px, transparent 1px) 0 0 / 28px 28px,
+    var(--stage-bg);
+}
+html[data-design="c"] .stage .cloud { display: none; }
+html[data-design="c"] .stage .gradient-blur,
+html[data-design="c"] .stage .stage-frame { display: none; }
+
+html[data-design="c"][data-theme="dark"] .home-logo {
+  filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.35)) drop-shadow(0 0 2px rgba(255, 255, 255, 0.25)) brightness(1.15);
+}
+
+html[data-design="c"] .stage .primary,
+html[data-design="c"] .stage-home .primary,
+html[data-design="c"] .modal-card .primary {
+  border-radius: 999px;
+  min-height: 56px;
+  background: var(--c-grad);
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 30px rgba(91, 66, 243, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+html[data-design="c"][data-theme="dark"] .stage .primary,
+html[data-design="c"][data-theme="dark"] .stage-home .primary {
+  box-shadow: 0 0 28px rgba(124, 92, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+html[data-design="c"] .stage .secondary,
+html[data-design="c"] .stage-home .secondary {
+  border-radius: 999px;
+  background: var(--stage-panel);
+  color: var(--stage-ink);
+  font-weight: 700;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: inset 0 0 0 1px var(--stage-line);
+}
+html[data-design="c"][data-theme="dark"] .stage-home .secondary { box-shadow: inset 0 0 0 1px rgba(160, 156, 255, 0.35); }
+
+@media (hover: hover) {
+  html[data-design="c"] .stage-home .primary:hover:not(:disabled) { background: var(--c-grad); filter: brightness(1.08); }
+}
+
+html[data-design="c"] .stage-home .home-board-link {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.1rem;
+  color: var(--stage-accent);
+}
+
+html[data-design="c"] .home-more::before {
+  border-top: 1px solid transparent;
+  border-image: var(--c-grad) 1;
+  opacity: 0.6;
+}
+
+html[data-design="c"] .stage-home .greeting,
+html[data-design="c"] .stage .board h2 {
+  font-family: var(--display);
+  font-weight: 400;
+}
+
+html[data-design="c"] .how-to-play,
+html[data-design="c"] .sun-button,
+html[data-design="c"] .stage .pill {
+  background: var(--stage-panel);
+  color: var(--stage-ink);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: inset 0 0 0 1px var(--stage-line);
+}
+html[data-design="c"][data-theme="dark"] .sun-button { background: var(--stage-panel); color: var(--stage-ink); }
+
+/* Scores: glowing leaderboard. */
+html[data-design="c"] .stage .board h2 {
+  font-size: 1.8rem;
+  background: var(--c-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-design="c"] .stage .score-table,
+html[data-design="c"] .stage .board-disclosure,
+html[data-design="c"] .stage .outside-top .score-row,
+html[data-design="c"] .stage .empty,
+html[data-design="c"] .saved-note {
+  border-radius: 18px;
+  background: var(--stage-panel);
+  box-shadow: var(--c-glow);
+}
+html[data-design="c"] .stage .fastest-route {
+  border-radius: 18px;
+  background: var(--stage-panel);
+  box-shadow: inset 0 0 0 1px transparent, var(--c-glow);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--stage-panel-solid), var(--stage-panel-solid)) padding-box,
+    var(--c-grad) border-box;
+}
+html[data-design="c"] .stage .fastest-steps { color: var(--stage-accent); font-family: var(--display); font-weight: 400; font-size: 1.15rem; }
+html[data-design="c"] .stage .board-disclosure { font-family: var(--display); font-weight: 400; font-size: 1.12rem; }
+html[data-design="c"] .stage .score-head { color: var(--stage-muted); text-transform: none; }
+html[data-design="c"] .stage .num.is-medal { color: var(--stage-accent); font-family: var(--display); font-weight: 400; font-size: 1.15rem; text-shadow: 0 0 12px color-mix(in srgb, var(--stage-accent) 60%, transparent); }
+html[data-design="c"] .stage .score-row .clock { font-variant-numeric: tabular-nums; }
+html[data-design="c"] .stage .text-button.compact { background: var(--tint); color: var(--stage-accent); }
+html[data-design="c"] .stage .board-bar { background: color-mix(in srgb, var(--stage-bg) 70%, transparent); }
+
+/* ---------- Game ---------- */
+html[data-design="c"] .game-header { background: var(--chrome); border-bottom: 1px solid var(--separator); }
+html[data-design="c"] .game-header::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--c-grad);
+  opacity: 0.85;
+}
+html[data-design="c"] .route-title { font-family: var(--display); font-weight: 400; font-size: 1.15rem; }
+html[data-design="c"] .arrow { color: var(--c-accent); }
+
+html[data-design="c"] .target-link {
+  border-radius: 999px;
+  background: var(--c-grad);
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.15rem;
+  padding: 10px 14px;
+  box-shadow: 0 6px 20px rgba(91, 66, 243, 0.3);
+}
+html[data-design="c"][data-theme="dark"] .target-link { box-shadow: 0 0 22px rgba(124, 92, 255, 0.5); }
+
+html[data-design="c"] .menu-button { background: var(--fill); box-shadow: inset 0 0 0 1px var(--separator); }
+html[data-design="c"] .stat,
+html[data-design="c"] .info-row > span { border-radius: 999px; background: var(--fill); box-shadow: inset 0 0 0 1px var(--separator); }
+html[data-design="c"] .info-row .clock,
+html[data-design="c"] .info-row bdi { font-family: var(--display); font-weight: 400; color: var(--c-accent); font-size: 1rem; }
+
+html[data-design="c"] .article-inner > h1 { font-family: var(--display); font-weight: 400; letter-spacing: 0; }
+html[data-design="c"] .article-body h2 { font-family: var(--display); font-weight: 400; }
+html[data-design="c"] .article-body a { text-decoration: none; }
+html[data-design="c"][data-theme="dark"] .article-body a:not(.external) { text-shadow: 0 0 10px rgba(94, 224, 255, 0.25); }
+html[data-design="c"] .loading-bar { height: 3px; }
+html[data-design="c"] .loading-bar::before { background: var(--c-grad); }
+html[data-design="c"] .modal-card,
+html[data-design="c"] .game-menu-panel { border-radius: 20px; }
+html[data-design="c"][data-theme="dark"] .article-body :where(.infobox, .infobox td, .infobox th, .wikitable, .wikitable td, .wikitable th, .navbox, .navbox td, .navbox th, .thumbinner, .thumbcaption) { background-color: #12142b !important; }
+html[data-design="c"][data-theme="dark"] .article-body [style*="background-color"],
+html[data-design="c"][data-theme="dark"] .article-body [style*="background:"] { background-color: #17193a !important; }
