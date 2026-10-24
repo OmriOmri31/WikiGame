@@ -26,6 +26,21 @@
     <meta name="apple-mobile-web-app-title" content="WikiWiki" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
+    <style>
+      /* Installed-app loading screen. Only shown in standalone mode, and React
+         replaces it on first render, so navy never stays behind any page. */
+      .boot { display: none; }
+      @media (display-mode: standalone), (display-mode: fullscreen) {
+        .boot {
+          position: fixed;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          background: radial-gradient(circle at 50% 40%, #1d4b8f, #14254f 55%, #0a1430);
+        }
+        .boot img { width: 132px; height: 132px; border-radius: 30px; }
+      }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -34,7 +49,7 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot" aria-hidden="true"><img src="/icon-v2-192.png" alt="" /></div></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
