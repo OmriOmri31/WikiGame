@@ -88,11 +88,11 @@ export default function IntroAlert({ open, rememberable, onDismiss }) {
         aria-describedby="intro-body"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="intro-title">איך משחקים</h2>
+        <h2 id="intro-title">איך מגיעים מכדורגל לפיל?</h2>
         <div id="intro-body">
-          <p>כל יום כולם מקבלים אותו זוג ערכים מוויקיפדיה.</p>
-          <p>מתחילים בערך אחד, ומגיעים לשני רק דרך קישורים.</p>
-          <p>בלי חיפוש. פחות דפים ופחות זמן, גבוה יותר בטבלה.</p>
+          <p>רק בלחיצה על קישורים. כל יום בחצות עולה זוג ערכים חדש מוויקיפדיה, אותו זוג לכולם.</p>
+          <p>פחות דפים, מקום גבוה יותר בטבלה. בשוויון, הזמן קובע.</p>
+          <p>במשחק החופשי מקבלים זוג חדש בכל סיבוב.</p>
         </div>
         {rememberable ? (
           <label className="intro-remember">
