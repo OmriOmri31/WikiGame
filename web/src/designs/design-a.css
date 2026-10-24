@@ -1,0 +1,272 @@
+/* Design A — "אנציקלופדיה" (Editorial).
+   Warm paper, ink-black type, Wikipedia link blue, serif headlines, hairline rules, square corners.
+   Active only when <html data-design="a">. Logic and layout are unchanged. */
+
+html[data-design="a"] {
+  --bg: #f7f4ec;
+  --paper: #fbf9f3;
+  --surface: rgba(251, 249, 243, 0.94);
+  --surface-solid: #fffdf7;
+  --label: #1b1a17;
+  --secondary-label: #6b665b;
+  --separator: rgba(27, 26, 23, 0.16);
+  --fill: rgba(27, 26, 23, 0.06);
+  --blue: #3366cc;
+  --blue-pressed: #2a4b8d;
+  --tint: rgba(51, 102, 204, 0.1);
+  --highlight: rgba(51, 102, 204, 0.12);
+  --visited: #795cb2;
+  --radius: 4px;
+  --chrome: rgba(251, 249, 243, 0.97);
+  --chrome-fade: rgba(251, 249, 243, 0.8);
+  --table-head: #efe9db;
+  --font: Heebo, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --serif: "Frank Ruhl Libre", "David Libre", "Times New Roman", serif;
+}
+
+html[data-design="a"][data-theme="dark"] {
+  --bg: #15130f;
+  --paper: #15130f;
+  --surface: rgba(28, 26, 21, 0.94);
+  --surface-solid: #1f1c17;
+  --label: #ece6d8;
+  --secondary-label: #a39c8c;
+  --separator: rgba(236, 230, 216, 0.16);
+  --fill: rgba(236, 230, 216, 0.08);
+  --blue: #8fb0f0;
+  --blue-pressed: #b3c9f5;
+  --tint: rgba(143, 176, 240, 0.14);
+  --highlight: rgba(143, 176, 240, 0.16);
+  --visited: #c3aef0;
+  --chrome: rgba(28, 26, 21, 0.97);
+  --chrome-fade: rgba(21, 19, 15, 0.8);
+  --table-head: #26231d;
+}
+
+html[data-design="a"] body { background: var(--bg); }
+html[data-design="a"][data-theme="dark"] body { background: var(--bg); }
+
+/* ---------- Shell (home + scores) ---------- */
+html[data-design="a"] .stage,
+html[data-design="a"] .stage.stage-home {
+  --home-blue: #3366cc;
+  --home-blue-pressed: #2a4b8d;
+  --home-ink: #1b1a17;
+  --home-muted: #6b665b;
+  --home-line: rgba(27, 26, 23, 0.18);
+  --stage-bg: #f7f4ec;
+  --stage-ink: #1b1a17;
+  --stage-muted: #6b665b;
+  --stage-line: rgba(27, 26, 23, 0.18);
+  --stage-panel: #fffdf7;
+  --stage-panel-solid: #fffdf7;
+  --stage-accent: #3366cc;
+  --stage-fill: rgba(27, 26, 23, 0.05);
+  --stage-action: #1b1a17;
+  --stage-action-ink: #fbf9f3;
+  --stage-action-hover: #34322c;
+  --stage-shadow: none;
+  background: #f7f4ec;
+  color: #1b1a17;
+  font-family: Heebo, "Segoe UI", system-ui, sans-serif;
+}
+
+html[data-design="a"][data-theme="dark"] .stage,
+html[data-design="a"][data-theme="dark"] .stage.stage-home {
+  --home-blue: #8fb0f0;
+  --home-blue-pressed: #b3c9f5;
+  --home-ink: #ece6d8;
+  --home-muted: #a39c8c;
+  --home-line: rgba(236, 230, 216, 0.18);
+  --stage-bg: #15130f;
+  --stage-ink: #ece6d8;
+  --stage-muted: #a39c8c;
+  --stage-line: rgba(236, 230, 216, 0.18);
+  --stage-panel: #1f1c17;
+  --stage-panel-solid: #1f1c17;
+  --stage-accent: #8fb0f0;
+  --stage-fill: rgba(236, 230, 216, 0.06);
+  --stage-action: #ece6d8;
+  --stage-action-ink: #15130f;
+  --stage-action-hover: #ffffff;
+  background: #15130f;
+  color: #ece6d8;
+}
+
+html[data-design="a"] body:has(.stage) { background: #f7f4ec; }
+html[data-design="a"][data-theme="dark"] body:has(.stage) { background: #15130f; }
+
+html[data-design="a"] .stage .atmosphere,
+html[data-design="a"] .stage .gradient-blur { display: none; }
+
+/* Thin double rule framing the page, like a printed volume. */
+html[data-design="a"] .stage .stage-frame {
+  display: block;
+  inset: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  border: 0;
+  border-top: 3px double var(--stage-line);
+  border-bottom: 3px double var(--stage-line);
+}
+html[data-design="a"] .stage .stage-frame i { display: none; }
+
+html[data-design="a"] .stage .primary,
+html[data-design="a"] .stage .secondary,
+html[data-design="a"] .stage-home .primary,
+html[data-design="a"] .stage-home .secondary {
+  border-radius: 3px;
+  box-shadow: none;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+html[data-design="a"] .stage-home .primary,
+html[data-design="a"] .stage .primary {
+  background: var(--stage-action);
+  color: var(--stage-action-ink);
+}
+
+html[data-design="a"] .stage-home .secondary,
+html[data-design="a"] .stage .secondary {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--stage-ink);
+}
+
+html[data-design="a"] .stage-home .home-board-link {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  color: var(--stage-accent);
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  text-decoration-thickness: 1px;
+}
+
+html[data-design="a"] .home-more::before {
+  border-top: 1px solid var(--stage-line);
+  inset-inline: 0;
+}
+
+html[data-design="a"] .home-hero { position: relative; padding-bottom: 18px; }
+html[data-design="a"] .home-hero::after {
+  content: "";
+  display: block;
+  margin-top: 14px;
+  width: 100%;
+  border-top: 3px double var(--stage-line);
+}
+
+html[data-design="a"] .stage-home .greeting,
+html[data-design="a"] .stage .board h2,
+html[data-design="a"] .stage h1 {
+  font-family: var(--serif);
+  font-weight: 700;
+}
+
+html[data-design="a"] .how-to-play,
+html[data-design="a"] .sun-button,
+html[data-design="a"] .stage .pill {
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--stage-line);
+  color: var(--stage-ink);
+}
+html[data-design="a"][data-theme="dark"] .sun-button { background: transparent; color: var(--stage-ink); }
+
+/* Scores: a reference table, not cards. */
+html[data-design="a"] .stage .board h2 {
+  font-size: 1.7rem;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--stage-ink);
+}
+
+html[data-design="a"] .stage .lede {
+  font-family: var(--serif);
+  font-style: normal;
+  color: var(--stage-muted);
+}
+
+html[data-design="a"] .stage .score-table,
+html[data-design="a"] .stage .board-disclosure,
+html[data-design="a"] .stage .fastest-route,
+html[data-design="a"] .stage .outside-top .score-row,
+html[data-design="a"] .stage .empty,
+html[data-design="a"] .saved-note {
+  border-radius: 2px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: inset 0 0 0 1px var(--stage-line);
+  background: var(--stage-panel);
+}
+
+html[data-design="a"] .stage .board-disclosure {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  box-shadow: none;
+  background: transparent;
+  border-top: 1px solid var(--stage-line);
+  border-bottom: 1px solid var(--stage-line);
+  border-radius: 0;
+  padding-inline: 4px;
+}
+
+html[data-design="a"] .stage .score-head {
+  background: var(--table-head);
+  color: var(--stage-ink);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+html[data-design="a"] .stage .num.is-medal { color: var(--stage-ink); font-family: var(--serif); font-size: 1.1rem; }
+html[data-design="a"] .stage .text-button.compact { border-radius: 2px; background: transparent; color: var(--stage-accent); text-decoration: underline; text-underline-offset: 3px; }
+html[data-design="a"] .stage .fastest-steps { font-family: var(--serif); font-size: 1.1rem; }
+html[data-design="a"] .stage .board-bar { background: color-mix(in srgb, var(--stage-bg) 92%, transparent); border-top: 1px solid var(--stage-line); }
+
+/* ---------- Game ---------- */
+html[data-design="a"] .game-header {
+  background: var(--chrome);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid var(--separator);
+}
+html[data-design="a"] .game-header::after { display: none; }
+
+html[data-design="a"] .route-title { font-family: var(--serif); font-size: 1.2rem; font-weight: 700; }
+html[data-design="a"] .arrow { color: var(--secondary-label); }
+
+html[data-design="a"] .target-link {
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--blue);
+  font-family: var(--serif);
+  font-size: 1.2rem;
+}
+html[data-design="a"] .target-link::before { content: "יעד: "; font-family: var(--font); font-size: 0.85rem; font-weight: 500; color: var(--secondary-label); }
+
+html[data-design="a"] .menu-button,
+html[data-design="a"] .stat,
+html[data-design="a"] .info-row > span {
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+html[data-design="a"] .article-inner > h1 {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: clamp(2rem, 5vw, 2.6rem);
+  letter-spacing: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--separator);
+}
+
+html[data-design="a"] .article-body h2 {
+  font-family: var(--serif);
+  font-weight: 700;
+  border-bottom: 1px solid var(--separator);
+}
+
+html[data-design="a"] .article-body a { text-decoration: none; }
+html[data-design="a"] .article-body p,
+html[data-design="a"] .article-body li { line-height: 1.65; }
+html[data-design="a"] .loading-bar::before { background: var(--label); }
+html[data-design="a"] .modal-card,
+html[data-design="a"] .game-menu-panel { border-radius: 4px; }

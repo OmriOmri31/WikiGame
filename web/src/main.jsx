@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { applyInitialTheme } from './theme';
 import './styles.css';
+import './designs/design-a.css';
 import { syncSystemBars } from './systemBars';
 
 applyInitialTheme();
