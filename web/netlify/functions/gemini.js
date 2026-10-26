@@ -5,7 +5,7 @@ const FIREBASE_KEY = 'AIzaSyCKKmyF_NJsrH88s1bolUoGUhT9XowlXhQ';
 
 // Netlify sets URL to the site's main address (production or test site).
 function siteReferer() {
-  return `${(process.env.URL || 'https://omri-wiki-game.netlify.app').replace(/\/+$/, '')}/`;
+  return `${(process.env.URL || 'https://wikiwiki-game.netlify.app').replace(/\/+$/, '')}/`;
 }
 
 function json(body, status) {

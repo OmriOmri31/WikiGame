@@ -1,7 +1,7 @@
 # WikiWiki
 
 A Hebrew Wikipedia game: get from one article to another using only the links inside the pages.
-Play it at https://omri-wiki-game.netlify.app.
+Play it at https://wikiwiki-game.netlify.app.
 
 ## Layout
 
