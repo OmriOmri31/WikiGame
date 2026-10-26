@@ -9,7 +9,7 @@ const REQUEST_LIMIT = 3;
 
 // Wikimedia throttles clients that don't identify themselves. Browsers can't set User-Agent, so
 // they send Api-User-Agent; the server job (Node) sends a real User-Agent with a contact page.
-const BOT_AGENT = 'WikiWikiBot/1.0 (https://omri-wiki-game.netlify.app; https://github.com/OmriOmri31/WikiGame)';
+const BOT_AGENT = 'WikiWikiBot/1.0 (https://wikiwiki-game.netlify.app; https://github.com/OmriOmri31/WikiGame)';
 const WIKI_HEADERS = typeof window === 'undefined'
   ? { 'User-Agent': BOT_AGENT, 'Api-User-Agent': BOT_AGENT }
   : { 'Api-User-Agent': BOT_AGENT };
