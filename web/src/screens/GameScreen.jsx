@@ -1,0 +1,993 @@
+/* global __WIKIGAME_TEST__ */
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { accountName } from '../account';
+import { rememberGuestResult } from '../guestClaim';
+import { db } from '../firebase';
+import { saveLocalScore } from '../localScores';
+import { saveDailyScore, saveLocalDaily } from '../dailyScore';
+import { pageTitle } from '../testSite';
+import { exitFullscreen } from '../fullscreen';
+import { clearGameSession, saveGameSession } from '../gameSession';
+import GameMenu from '../GameMenu';
+import GameTools, { FindBar } from '../GameTools';
+import { guardText, onGuardedCopy } from '../findGuard';
+import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
+import Sheet from '../Sheet';
+import { adoptFastestSearch, beginFastestSearch, fastestPathNow, publishFastestPath } from '../fastestSearch';
+import { formatDuration } from '../time';
+import { liveDailyPair } from '../dailyPair';
+import { WIKIPEDIA_LICENSE_URL } from '../legal';
+import {
+  articleUrl,
+  fetchArticle,
+  israelDateKey,
+  normalizeTitle,
+  pickFreePlayPair,
+  prepareArticleHtml,
+  resolveStartTitle,
+  sameTitle,
+  titleFromHref,
+} from '../wikipedia';
+
+// The secret jump-to-goal code exists only on the test site; production builds drop this import.
+const SecretCode = __WIKIGAME_TEST__ ? lazy(() => import('../SecretCode')) : null;
+
+function scrollToHash(hash) {
+  const raw = String(hash || '').replace(/^#/, '');
+  if (!raw) return false;
+  const ids = [raw];
+  try {
+    const decoded = decodeURIComponent(raw.replace(/\+/g, '%20'));
+    if (!ids.includes(decoded)) ids.push(decoded);
+  } catch {
+    // Keep the raw fragment when it is not valid percent-encoding.
+  }
+  for (const id of ids) {
+    const target = document.getElementById(id);
+    if (!target) continue;
+    target.scrollIntoView({ block: 'start' });
+    return true;
+  }
+  return false;
+}
+
+function loadErrorMessage(mode, pair) {
+  if (pair?.startTitle) return 'לא ניתן לטעון את הערכים האלה.';
+  if (mode === 'free') return 'לא ניתן לטעון משחק חופשי.';
+  return 'לא ניתן לטעון את המאמרים היומיים.';
+}
+
+function WikiAttribution({ title }) {
+  return (
+    <p className="wiki-attribution">
+      <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">הערך בוויקיפדיה</a>
+      {' · '}תוכן מוויקיפדיה העברית, ברישיון{' '}
+      <a href={WIKIPEDIA_LICENSE_URL} target="_blank" rel="noopener noreferrer" dir="ltr">CC BY-SA 4.0</a>
+    </p>
+  );
+}
+
+export default function GameScreen({ user, mode = 'daily', pair = null, resume = null, onFinish, onExit }) {
+  const [startTitle, setStartTitle] = useState('');
+  const [goalTitle, setGoalTitle] = useState('');
+  const [article, setArticle] = useState(null);
+  const [articleHtml, setArticleHtml] = useState('');
+  const [goalArticle, setGoalArticle] = useState(null);
+  const [goalHtml, setGoalHtml] = useState('');
+  const [pages, setPages] = useState(1);
+  const [elapsed, setElapsed] = useState(0);
+  const [finalTime, setFinalTime] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [clockOn, setClockOn] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [fatal, setFatal] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [toast, setToast] = useState('');
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [dailyNote, setDailyNote] = useState('');
+  const [congratsOpen, setCongratsOpen] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [backUses, setBackUses] = useState(3);
+  const [searchTitle, setSearchTitle] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findIndex, setFindIndex] = useState(0);
+  const [findCount, setFindCount] = useState(0);
+  const [findCapped, setFindCapped] = useState(false);
+
+  const pagesRef = useRef(1);
+  const elapsedBaseRef = useRef(0);
+  const clockSinceRef = useRef(0);
+  const runningRef = useRef(false);
+  const pathRef = useRef([]);
+  const startTitleRef = useRef('');
+  const currentTitleRef = useRef('');
+  const goalTitleRef = useRef('');
+  const finishedRef = useRef(false);
+  const loadingRef = useRef(false);
+  const pendingHashRef = useRef('');
+  const scrollRef = useRef(null);
+  const toastTimerRef = useRef(0);
+  const runRef = useRef(0);
+  const lockedPairRef = useRef(null);
+  const headerRef = useRef(null);
+  // The Israel date whose daily pair this game is, or '' when it is not today's daily game
+  // (an old pair replayed from the scores page, or a game left open from another day).
+  const dailyKeyRef = useRef('');
+  const articleRef = useRef(null);
+  const cacheRef = useRef(new Map());
+  const backUsesRef = useRef(3);
+  const searchTitleRef = useRef(null);
+  const searchOpenRef = useRef(false);
+  const rangesRef = useRef([]);
+  const findIndexRef = useRef(0);
+  const onFinishRef = useRef(onFinish);
+  const goalOpenRef = useRef(false);
+  const pendingScrollRef = useRef(0);
+  const resumeRef = useRef(resume);
+  const modeRef = useRef(mode);
+  onFinishRef.current = onFinish;
+  searchOpenRef.current = searchOpen;
+  goalOpenRef.current = goalOpen;
+  modeRef.current = mode;
+
+  function readElapsed() {
+    const live = clockSinceRef.current ? (Date.now() - clockSinceRef.current) / 1000 : 0;
+    return elapsedBaseRef.current + live;
+  }
+
+  function persistSession() {
+    if (finishedRef.current || modeRef.current === 'preview') return;
+    if (!startTitleRef.current || !goalTitleRef.current || !currentTitleRef.current) return;
+    if (!pathRef.current.length) return;
+    saveGameSession({
+      mode: modeRef.current === 'free' ? 'free' : 'daily',
+      dailyKey: dailyKeyRef.current,
+      startTitle: startTitleRef.current,
+      goalTitle: goalTitleRef.current,
+      currentTitle: currentTitleRef.current,
+      path: pathRef.current.slice(),
+      pages: pagesRef.current,
+      backUses: backUsesRef.current,
+      elapsedMs: Math.max(0, Math.round(readElapsed() * 1000)),
+      scrollTop: scrollRef.current?.scrollTop || 0,
+      goalOpen: goalOpenRef.current,
+    });
+  }
+
+  function stopClock() {
+    if (clockSinceRef.current) {
+      elapsedBaseRef.current += (Date.now() - clockSinceRef.current) / 1000;
+      clockSinceRef.current = 0;
+    }
+    runningRef.current = false;
+    setClockOn(false);
+    setRunning(false);
+    setElapsed(elapsedBaseRef.current);
+    return elapsedBaseRef.current;
+  }
+
+  function startClock(elapsedSeconds) {
+    elapsedBaseRef.current = elapsedSeconds;
+    const hidden = document.visibilityState === 'hidden';
+    clockSinceRef.current = hidden ? 0 : Date.now();
+    runningRef.current = true;
+    setElapsed(elapsedSeconds);
+    setClockOn(!hidden);
+    setRunning(true);
+  }
+
+  function freezeClock() {
+    if (!runningRef.current || finishedRef.current) {
+      persistSession();
+      return;
+    }
+    if (clockSinceRef.current) {
+      elapsedBaseRef.current += (Date.now() - clockSinceRef.current) / 1000;
+      clockSinceRef.current = 0;
+      setElapsed(elapsedBaseRef.current);
+    }
+    setClockOn(false);
+    persistSession();
+  }
+
+  function thawClock() {
+    if (!runningRef.current || finishedRef.current) return;
+    if (document.visibilityState === 'hidden') return;
+    if (!clockSinceRef.current) clockSinceRef.current = Date.now();
+    setClockOn(true);
+  }
+  const fixedStart = pair?.startTitle || '';
+  const fixedGoal = pair?.goalTitle || '';
+
+  function showToast(message) {
+    setToast(message);
+    window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 3200);
+  }
+
+  function closeSearchIfOtherPage(title) {
+    if (!searchTitleRef.current || sameTitle(searchTitleRef.current, title)) return;
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+  }
+
+  function openSearch() {
+    if (finishedRef.current) return;
+    const here = currentTitleRef.current;
+    if (!here) return;
+    if (searchTitleRef.current && !sameTitle(searchTitleRef.current, here)) return;
+    if (!searchTitleRef.current) {
+      searchTitleRef.current = here;
+      setSearchTitle(here);
+    }
+    searchOpenRef.current = true;
+    setSearchOpen(true);
+    setGoalOpen(false);
+  }
+
+  function toggleSearch() {
+    if (searchTitleRef.current && !sameTitle(searchTitleRef.current, currentTitleRef.current)) return;
+    if (searchOpenRef.current) {
+      searchOpenRef.current = false;
+      setSearchOpen(false);
+      return;
+    }
+    openSearch();
+  }
+
+  function closeSearch() {
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+    document.querySelector('.search-tool')?.focus({ preventScroll: true });
+  }
+
+  function stepFind(delta) {
+    const ranges = rangesRef.current;
+    if (!ranges.length) return;
+    const next = (findIndexRef.current + delta + ranges.length) % ranges.length;
+    findIndexRef.current = next;
+    setFindIndex(next);
+    paintPageFind(ranges, next);
+    scrollMatchIntoView(ranges[next], scrollRef.current);
+  }
+
+  function applyBack(entry) {
+    const count = Math.max(1, pagesRef.current - 1);
+    pagesRef.current = count;
+    setPages(count);
+    backUsesRef.current = Math.max(0, backUsesRef.current - 1);
+    setBackUses(backUsesRef.current);
+    pathRef.current = pathRef.current.slice(0, -1);
+    const last = pathRef.current.length - 1;
+    if (last >= 0 && !sameTitle(pathRef.current[last], entry.article.title)) {
+      pathRef.current[last] = entry.article.title;
+    }
+    currentTitleRef.current = entry.article.title;
+    pendingHashRef.current = '';
+    setArticle(entry.article);
+    setArticleHtml(entry.html);
+    closeSearchIfOtherPage(entry.article.title);
+    persistSession();
+  }
+
+  async function goBack() {
+    if (finishedRef.current || loadingRef.current) return;
+    if (backUsesRef.current <= 0 || pathRef.current.length < 2 || pagesRef.current < 2) return;
+
+    const previousTitle = pathRef.current[pathRef.current.length - 2];
+    const cached = cacheRef.current.get(previousTitle);
+    if (cached) {
+      applyBack(cached);
+      return;
+    }
+
+    const run = runRef.current;
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      const next = await fetchArticle(previousTitle);
+      const html = await prepareArticleHtml(next.html);
+      if (finishedRef.current || run !== runRef.current) return;
+      cacheRef.current.set(next.title, { article: next, html });
+      applyBack({ article: next, html });
+    } catch (error) {
+      console.error(error);
+      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');
+    } finally {
+      if (run === runRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function chooseTitles() {
+      if (lockedPairRef.current) {
+        return {
+          start: lockedPairRef.current.start,
+          goal: lockedPairRef.current.goal,
+          fixed: true,
+        };
+      }
+      if (fixedStart && fixedGoal) {
+        return { start: normalizeTitle(fixedStart), goal: normalizeTitle(fixedGoal), fixed: true };
+      }
+      if (mode === 'free') {
+        const picked = await pickFreePlayPair();
+        return { start: picked.start, goal: picked.goal, fixed: false };
+      }
+      const snapshot = await getDoc(doc(db, 'daily', 'articles'));
+      if (!snapshot.exists()) throw new Error('missing');
+      const pair = liveDailyPair(snapshot.data());
+      const goal = normalizeTitle(pair.goal);
+      const start = await resolveStartTitle(pair.start, goal);
+      if (!start || !goal) throw new Error('missing');
+      return { start, goal, fixed: true, dailyKey: pair.live ? pair.dateKey : '' };
+    }
+
+    // A daily game on a given pair (a replay, or a resumed game) counts as today's daily game
+    // only if that pair is today's live pair.
+    async function todaysDailyKey(start, goal) {
+      try {
+        const snapshot = await getDoc(doc(db, 'daily', 'articles'));
+        if (!snapshot.exists()) return '';
+        const live = liveDailyPair(snapshot.data());
+        if (!live.live) return '';
+        const liveGoal = normalizeTitle(live.goal);
+        const liveStart = await resolveStartTitle(live.start, liveGoal);
+        return sameTitle(liveStart, start) && sameTitle(liveGoal, goal) ? live.dateKey : '';
+      } catch (error) {
+        console.error(error);
+        return '';
+      }
+    }
+
+    async function loadGame() {
+      setFatal('');
+      setLoading(true);
+      loadingRef.current = true;
+      try {
+        let chosen = await chooseTitles();
+        if (mode === 'free') beginFastestSearch(chosen.start, chosen.goal);
+        let startArticle;
+        let targetArticle;
+        for (let index = 0; index < 3; index += 1) {
+          [startArticle, targetArticle] = await Promise.all([
+            fetchArticle(chosen.start),
+            fetchArticle(chosen.goal),
+          ]);
+          if (!sameTitle(startArticle.title, targetArticle.title)) break;
+          if (chosen.fixed || index === 2) throw new Error('same');
+          chosen = await chooseTitles();
+          if (mode === 'free') beginFastestSearch(chosen.start, chosen.goal);
+        }
+        const [startHtml, targetHtml] = await Promise.all([
+          prepareArticleHtml(startArticle.html),
+          prepareArticleHtml(targetArticle.html),
+        ]);
+        if (cancelled) return;
+
+        const snapshot = resumeRef.current;
+        if (mode === 'free' || mode === 'preview') {
+          dailyKeyRef.current = '';
+        } else if (chosen.dailyKey !== undefined) {
+          dailyKeyRef.current = chosen.dailyKey;
+        } else if (snapshot && typeof snapshot.dailyKey === 'string') {
+          dailyKeyRef.current = snapshot.dailyKey;
+        } else if (!lockedPairRef.current) {
+          // First load of a replayed pair, or a game saved before the day was recorded.
+          dailyKeyRef.current = await todaysDailyKey(startArticle.title, targetArticle.title);
+        }
+        if (cancelled) return;
+        let playingArticle = startArticle;
+        let playingHtml = startHtml;
+        if (snapshot && !sameTitle(snapshot.currentTitle, startArticle.title)) {
+          playingArticle = await fetchArticle(snapshot.currentTitle);
+          if (cancelled) return;
+          playingHtml = await prepareArticleHtml(playingArticle.html);
+          if (cancelled) return;
+        }
+        const path = snapshot?.path?.length ? snapshot.path.slice() : [startArticle.title];
+        path[path.length - 1] = playingArticle.title;
+
+        if (mode === 'free') {
+          adoptFastestSearch(chosen.start, chosen.goal, startArticle.title, targetArticle.title);
+        }
+        lockedPairRef.current = {
+          start: startArticle.title,
+          goal: targetArticle.title,
+        };
+        goalTitleRef.current = targetArticle.title;
+        currentTitleRef.current = playingArticle.title;
+        startTitleRef.current = startArticle.title;
+        pathRef.current = path;
+        pagesRef.current = path.length;
+        backUsesRef.current = snapshot ? snapshot.backUses : 3;
+        cacheRef.current = new Map([[playingArticle.title, { article: playingArticle, html: playingHtml }]]);
+        pendingScrollRef.current = snapshot?.scrollTop || 0;
+        goalOpenRef.current = Boolean(snapshot?.goalOpen);
+        resumeRef.current = null;
+        setPages(path.length);
+        setBackUses(backUsesRef.current);
+        setStartTitle(startArticle.title);
+        setGoalTitle(targetArticle.title);
+        setGoalArticle(targetArticle);
+        setGoalHtml(targetHtml);
+        setGoalOpen(goalOpenRef.current);
+        setArticle(playingArticle);
+        setArticleHtml(playingHtml);
+        startClock((snapshot?.elapsedMs || 0) / 1000);
+        persistSession();
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setFatal(loadErrorMessage(mode, fixedStart ? { startTitle: fixedStart } : null));
+      } finally {
+        if (!cancelled) {
+          loadingRef.current = false;
+          setLoading(false);
+        }
+      }
+    }
+
+    loadGame();
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt, mode, fixedStart, fixedGoal]);
+
+  useEffect(() => {
+    if (!running || !clockOn) return undefined;
+    const tick = window.setInterval(() => setElapsed(readElapsed()), 50);
+    const save = window.setInterval(() => persistSession(), 1000);
+    return () => {
+      window.clearInterval(tick);
+      window.clearInterval(save);
+    };
+  }, [running, clockOn]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') freezeClock();
+      else thawClock();
+    };
+    window.addEventListener('pagehide', freezeClock);
+    window.addEventListener('pageshow', thawClock);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', freezeClock);
+      window.removeEventListener('pageshow', thawClock);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!article) return undefined;
+    document.title = pageTitle(`${article.title} – משחק הוויקיפדיה`);
+    const hash = pendingHashRef.current;
+    pendingHashRef.current = '';
+    const top = pendingScrollRef.current;
+    pendingScrollRef.current = 0;
+    if (top > 0) {
+      const apply = () => scrollRef.current?.scrollTo(0, top);
+      apply();
+      const frame = window.requestAnimationFrame(apply);
+      const timer = window.setTimeout(apply, 400);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.clearTimeout(timer);
+      };
+    }
+    if (hash && scrollToHash(hash)) return undefined;
+    scrollRef.current?.scrollTo(0, 0);
+    return undefined;
+  }, [article]);
+
+  // Make the browser's own find-in-page unable to match article words.
+  useLayoutEffect(() => {
+    guardText(articleRef.current);
+  }, [articleHtml, article?.title]);
+
+  useEffect(() => {
+    const root = articleRef.current;
+    clearPageFind(root);
+    rangesRef.current = [];
+    if (!searchOpen || !findQuery.trim() || !root) {
+      findIndexRef.current = 0;
+      setFindIndex(0);
+      setFindCount(0);
+      setFindCapped(false);
+      return undefined;
+    }
+    const { ranges, capped } = collectPageMatches(root, findQuery);
+    rangesRef.current = ranges;
+    findIndexRef.current = 0;
+    setFindIndex(0);
+    setFindCount(ranges.length);
+    setFindCapped(capped);
+    paintPageFind(ranges, 0);
+    if (ranges[0]) scrollMatchIntoView(ranges[0], scrollRef.current);
+    return () => clearPageFind(root);
+  }, [searchOpen, findQuery, articleHtml]);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (finishedRef.current) return;
+      if (event.key === 'Escape') {
+        if (!searchOpenRef.current) return;
+        event.preventDefault();
+        searchOpenRef.current = false;
+        setSearchOpen(false);
+        document.querySelector('.search-tool')?.focus({ preventScroll: true });
+        return;
+      }
+      const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
+      const findNext = event.key === 'F3' || (mod && event.code === 'KeyG');
+      if (findNext) {
+        // Block the browser's find-next too, and step the in-game find instead.
+        event.preventDefault();
+        event.stopPropagation();
+        if (searchOpenRef.current) stepFind(event.shiftKey ? -1 : 1);
+        return;
+      }
+      if (!(mod && event.code === 'KeyF')) return;
+      // Ctrl/Cmd+F (and Shift variants) never reach the browser's own find.
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat || !currentTitleRef.current) return;
+      const locked = searchTitleRef.current
+        && !sameTitle(searchTitleRef.current, currentTitleRef.current);
+      if (locked) {
+        showToast('החיפוש זמין רק בדף אחד במשחק.');
+        return;
+      }
+      if (searchOpenRef.current) {
+        const input = document.getElementById('page-find-input');
+        input?.focus();
+        input?.select();
+        return;
+      }
+      openSearch();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
+  useEffect(() => {
+    const onLeave = (event) => {
+      if (finishedRef.current || fatal) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onLeave);
+    return () => {
+      window.removeEventListener('beforeunload', onLeave);
+      window.clearTimeout(toastTimerRef.current);
+    };
+  }, [fatal]);
+
+  async function storeScore(score) {
+    const daily = score.mode === 'daily';
+    if (!user?.uid) {
+      if (daily) {
+        const saved = saveLocalDaily(score);
+        if (!saved.kept) rememberGuestResult(saved.row.id);
+        return { ...saved.row, kept: saved.kept, improved: saved.improved };
+      }
+      const row = saveLocalScore(score);
+      rememberGuestResult(row.id);
+      return row;
+    }
+    const data = {
+      uid: user.uid,
+      name: accountName(user),
+      pagesVisited: score.pagesVisited,
+      timeTaken: score.timeTaken,
+      timestamp: Timestamp.now(),
+      mode: score.mode,
+      startTitle: score.startTitle,
+      goalTitle: score.goalTitle,
+      path: score.path,
+      ...(Array.isArray(score.fastestPath) ? { fastestPath: score.fastestPath } : {}),
+      ...(score.gaveUp ? { gaveUp: true } : {}),
+    };
+    if (daily) return saveDailyScore(user.uid, score.dayKey, data);
+    const ref = await addDoc(collection(db, 'scores'), data);
+    return { id: ref.id };
+  }
+
+  async function saveFinishedScore(score) {
+    const ready = score.mode === 'free'
+      ? fastestPathNow(score.startTitle, score.goalTitle)
+      : null;
+    const saved = await storeScore({
+      ...score,
+      ...(Array.isArray(ready) ? { fastestPath: ready } : {}),
+    });
+    if (score.mode === 'free' && !Array.isArray(ready)) {
+      publishFastestPath(score.startTitle, score.goalTitle, {
+        id: saved.id,
+        local: Boolean(saved.local),
+      });
+    }
+    return saved;
+  }
+
+  async function completeGame(pageCount) {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    clearGameSession();
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+    exitFullscreen();
+    const shownAt = Date.now();
+    const timeTaken = Number(stopClock().toFixed(3));
+    setFinalTime(timeTaken);
+    setCongratsOpen(true);
+
+    if (mode === 'preview') {
+      const delay = Math.max(0, 2000 - (Date.now() - shownAt));
+      window.setTimeout(() => {
+        onFinishRef.current({
+          id: '',
+          timeTaken,
+          pagesVisited: pageCount,
+          mode: 'preview',
+        });
+      }, delay);
+      return;
+    }
+
+    // Only today's daily pair goes to the daily table. Anything else is kept as a free game.
+    const today = israelDateKey(new Date());
+    const scoreMode = mode !== 'free' && dailyKeyRef.current === today ? 'daily' : 'free';
+    const finish = (id, note) => {
+      const delay = Math.max(0, (note ? 3500 : 2000) - (Date.now() - shownAt));
+      window.setTimeout(() => {
+        onFinishRef.current({
+          id,
+          timeTaken,
+          pagesVisited: pageCount,
+          mode: scoreMode,
+        });
+      }, delay);
+    };
+
+    try {
+      const saved = await saveFinishedScore({
+        name: 'שחקן',
+        pagesVisited: pageCount,
+        timeTaken,
+        mode: scoreMode,
+        dayKey: today,
+        startTitle: startTitleRef.current,
+        goalTitle: goalTitleRef.current,
+        path: pathRef.current.slice(),
+      });
+      const note = saved.kept ? 'kept' : saved.improved ? 'improved' : '';
+      setDailyNote(note);
+      finish(saved.id, note);
+    } catch (error) {
+      console.error(error);
+      setSaveError(true);
+    }
+  }
+
+  function restartGame() {
+    if (finishedRef.current) return;
+    runRef.current += 1;
+    loadingRef.current = true;
+    finishedRef.current = false;
+    resumeRef.current = null;
+    elapsedBaseRef.current = 0;
+    clockSinceRef.current = 0;
+    runningRef.current = false;
+    pagesRef.current = 1;
+    backUsesRef.current = 3;
+    goalOpenRef.current = false;
+    if (lockedPairRef.current) {
+      currentTitleRef.current = lockedPairRef.current.start;
+      startTitleRef.current = lockedPairRef.current.start;
+      pathRef.current = [lockedPairRef.current.start];
+    }
+    persistSession();
+    setPages(1);
+    setElapsed(0);
+    setFinalTime(null);
+    setClockOn(false);
+    setRunning(false);
+    setGoalOpen(false);
+    setDailyNote('');
+    setCongratsOpen(false);
+    setSaveError(false);
+    setToast('');
+    backUsesRef.current = 3;
+    setBackUses(3);
+    searchTitleRef.current = null;
+    setSearchTitle(null);
+    searchOpenRef.current = false;
+    setSearchOpen(false);
+    setFindQuery('');
+    findIndexRef.current = 0;
+    setFindIndex(0);
+    setFindCount(0);
+    setFindCapped(false);
+    rangesRef.current = [];
+    clearPageFind(articleRef.current);
+    setLoading(true);
+    scrollRef.current?.scrollTo(0, 0);
+    setAttempt((value) => value + 1);
+  }
+
+  async function giveUp() {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    clearGameSession();
+    runRef.current += 1;
+    loadingRef.current = false;
+    exitFullscreen();
+    if (mode !== 'free') {
+      stopClock();
+      onExit();
+      return;
+    }
+
+    const timeTaken = Number(stopClock().toFixed(3));
+    try {
+      const saved = await saveFinishedScore({
+        name: 'שחקן',
+        pagesVisited: pagesRef.current,
+        timeTaken,
+        mode: 'free',
+        gaveUp: true,
+        startTitle: startTitleRef.current,
+        goalTitle: goalTitleRef.current,
+        path: pathRef.current.slice(),
+      });
+      onFinishRef.current({
+        id: saved.id,
+        timeTaken,
+        pagesVisited: pagesRef.current,
+        mode: 'free',
+      });
+    } catch (error) {
+      console.error(error);
+      onExit();
+    }
+  }
+
+  async function openArticle(title, hash = '') {
+    if (finishedRef.current || loadingRef.current) return;
+    if (sameTitle(title, currentTitleRef.current)) {
+      if (hash) scrollToHash(hash);
+      return;
+    }
+
+    const run = runRef.current;
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      const next = await fetchArticle(title);
+      const html = await prepareArticleHtml(next.html);
+      if (finishedRef.current || run !== runRef.current) return;
+
+      const count = pagesRef.current + 1;
+      pagesRef.current = count;
+      setPages(count);
+      currentTitleRef.current = next.title;
+      pathRef.current = [...pathRef.current, next.title];
+      cacheRef.current.set(next.title, { article: next, html });
+      pendingHashRef.current = hash;
+      setArticle(next);
+      setArticleHtml(html);
+      closeSearchIfOtherPage(next.title);
+
+      if (sameTitle(next.title, goalTitleRef.current)) {
+        await completeGame(count);
+        return;
+      }
+      persistSession();
+    } catch (error) {
+      console.error(error);
+      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');
+    } finally {
+      if (run === runRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }
+
+  function followLink(event, locked) {
+    const anchor = event.target.closest('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') || '';
+    if (href.startsWith('#')) {
+      event.preventDefault();
+      scrollToHash(href);
+      return;
+    }
+
+    event.preventDefault();
+    const parsed = titleFromHref(href);
+    if (locked) {
+      if (parsed.kind !== 'hash') showToast('בדף המטרה אפשר רק לקרוא.');
+      return;
+    }
+    if (parsed.kind === 'article') {
+      openArticle(parsed.title, parsed.hash);
+      return;
+    }
+    showToast('אפשר לנווט רק בין ערכי ויקיפדיה.');
+  }
+
+  const shownTime = finalTime ?? elapsed;
+
+  if (fatal) {
+    return (
+      <main className="screen">
+        <div className="card">
+          <p className="form-error" role="alert">{fatal}</p>
+          <button className="primary" type="button" onClick={() => setAttempt((value) => value + 1)}>
+            נסו שוב
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!article) {
+    return (
+      <main className="screen">
+        <p className="status">טוען את המשחק…</p>
+      </main>
+    );
+  }
+
+  const stats = (
+    <div className="info-row">
+      <span className="stat">זמן: <bdi className="clock" dir="ltr">{formatDuration(shownTime, { milliseconds: false })}</bdi></span>
+      <span className="stat">מספר הדפים: <bdi>{pages}</bdi></span>
+    </div>
+  );
+
+  return (
+    <main className="game">
+      {congratsOpen ? null : (
+        <GameMenu onRestart={restartGame} onExit={giveUp} freePlay={mode === 'free'} />
+      )}
+      {congratsOpen ? null : (
+        <GameTools
+          backUses={backUses}
+          backDisabled={pages < 2 || backUses < 1 || loading}
+          onFirstPage={pages < 2}
+          onBack={goBack}
+          searchDisabled={Boolean(searchTitle && !sameTitle(searchTitle, article.title))}
+          searchOpen={searchOpen}
+          onToggleSearch={toggleSearch}
+        />
+      )}
+      <div className="article-scroll" ref={scrollRef}>
+        <header className="game-header" ref={headerRef}>
+          <p className="route-title">{startTitle}</p>
+          <p className="arrow" aria-hidden="true">↓</p>
+          <button
+            className="target-link"
+            type="button"
+            onClick={() => {
+              if (searchOpenRef.current) {
+                searchOpenRef.current = false;
+                setSearchOpen(false);
+              }
+              setGoalOpen(true);
+            }}
+          >
+            {goalTitle}
+          </button>
+          {stats}
+          {searchOpen ? (
+            <FindBar
+              query={findQuery}
+              onQueryChange={setFindQuery}
+              matchIndex={findIndex}
+              matchCount={findCount}
+              matchCapped={findCapped}
+              onNext={() => stepFind(1)}
+              onPrev={() => stepFind(-1)}
+              onCloseSearch={closeSearch}
+            />
+          ) : null}
+          {loading ? <div className="loading-bar" role="progressbar" aria-label="טוען ערך" /> : null}
+        </header>
+
+        <article
+          className={`article-inner mw-parser-output${loading ? ' is-loading' : ''}`}
+          ref={articleRef}
+          onCopy={onGuardedCopy}
+        >
+          <h1>{article.title}</h1>
+          <div
+            className="article-body"
+            onClick={(event) => followLink(event, false)}
+            dangerouslySetInnerHTML={{ __html: articleHtml }}
+          />
+          {article.title && !loading ? <WikiAttribution title={article.title} /> : null}
+        </article>
+      </div>
+
+      {toast ? <div className="toast" role="status">{toast}</div> : null}
+
+      {goalArticle ? (
+        <Sheet
+          open={goalOpen}
+          onOpenChange={setGoalOpen}
+          label={goalTitle}
+          header={(
+            <>
+              <button className="linkish" type="button" onClick={() => setGoalOpen(false)}>
+                חזור למהלך המשחק
+              </button>
+              {stats}
+            </>
+          )}
+        >
+          <article className="article-inner mw-parser-output">
+            <h1>{goalArticle.title}</h1>
+            <p className="lede">זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.</p>
+            <div
+              className="article-body"
+              onClick={(event) => followLink(event, true)}
+              dangerouslySetInnerHTML={{ __html: goalHtml }}
+            />
+            <WikiAttribution title={goalArticle.title} />
+          </article>
+        </Sheet>
+      ) : null}
+
+      {SecretCode && !congratsOpen ? (
+        <Suspense fallback={null}>
+          <SecretCode
+            targetRef={headerRef}
+            resetKey={attempt}
+            onUnlock={() => {
+              if (goalArticle) openArticle(goalArticle.title);
+            }}
+          />
+        </Suspense>
+      ) : null}
+
+      {congratsOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
+            <h2>כל הכבוד!</h2>
+            <p>סיימתם ב־<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
+            <p>מספר הדפים: <bdi>{pages}</bdi></p>
+            {dailyNote === 'kept' ? <p className="congrats-note">התוצאה הקודמת שלך היום טובה יותר, והיא נשארת בטבלה.</p> : null}
+            {dailyNote === 'improved' ? <p className="congrats-note">שיפרת את התוצאה שלך להיום.</p> : null}
+            {saveError ? (
+              <>
+                <p className="form-error">התרחשה שגיאה בשמירת הציון.</p>
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() => onFinishRef.current({
+                    id: '',
+                    timeTaken: finalTime ?? 0,
+                    pagesVisited: pages,
+                    mode: mode === 'free' ? 'free' : 'daily',
+                  })}
+                >
+                  אל טבלת השיאים
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </main>
+  );
+}

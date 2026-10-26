@@ -1,0 +1,245 @@
+// Firestore security rules with basic validation
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isDeskAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'bsoHTJvKDiOr3qzvmL1EIHdnsji1';
+    }
+
+    function isReservedBotName() {
+      return request.resource.data.name is string
+        && request.resource.data.name.matches('(?i)^[\\s._\\-–—]*((wiki[\\s._\\-–—]*bot)|(ו+יקי[\\s._\\-–—]*בוט))[\\s._\\-–—]*$');
+    }
+
+    // Email/password accounts must have confirmed their address. Google accounts are verified by Google.
+    function isVerified() {
+      return request.auth != null
+        && (request.auth.token.email_verified == true
+          || request.auth.token.firebase.sign_in_provider == 'google.com');
+    }
+
+    function isReservedNickname(name) {
+      return name.matches('(?i)^[\\s._\\-–—]*((wiki[\\s._\\-–—]*bot)|(ו+יקי[\\s._\\-–—]*בוט))[\\s._\\-–—]*$');
+    }
+
+    // New nicknames: 2 to 9 characters including spaces, only Hebrew or English letters, digits,
+    // spaces and - _ =, with no space at either end and no double spaces.
+    // Every allowed character is a single code point, so the count matches what players see.
+    // Older nicknames stay valid; the rule applies when a nickname is picked or changed.
+    // (The blocked-words list is checked in the app only.)
+    function isValidNewNickname(name) {
+      return name is string
+        && name.matches('^[A-Za-z0-9א-ת_= -]{2,9}$')
+        && name.matches('^[A-Za-z0-9א-ת_=-]+( [A-Za-z0-9א-ת_=-]+)*$');
+    }
+
+    // One document per lower-cased nickname. Its existence is what makes a nickname unique.
+    match /nicknames/{key} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isVerified()
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && isValidNewNickname(request.resource.data.name)
+        && request.resource.data.name.lower() == key
+        && !isReservedNickname(request.resource.data.name)
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.key == key;
+      allow update: if false;
+      // Released only by its owner: when moving to a different nickname in the same write, or when
+      // deleting the account (the profile goes in the same write).
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+          || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.key != key);
+    }
+
+    // A player who moves to a new nickname gives up the old one in the same write, so nobody can
+    // hold (squat) more than one nickname.
+    function releasesOldNickname(uid) {
+      return resource == null
+        || !(resource.data.get('key', null) is string)
+        || resource.data.key == ''
+        || resource.data.key == request.resource.data.key
+        || !existsAfter(/databases/$(database)/documents/nicknames/$(resource.data.key))
+        || getAfter(/databases/$(database)/documents/nicknames/$(resource.data.key)).data.uid != uid;
+    }
+
+    // Each player's profile. The nickname must be reserved for the same player.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if isVerified()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nickname', 'key', 'updatedAt'])
+        && releasesOldNickname(uid)
+        && request.resource.data.nickname is string
+        && request.resource.data.key is string
+        && request.resource.data.nickname.lower() == request.resource.data.key
+        && (isValidNewNickname(request.resource.data.nickname)
+          || (resource != null && resource.data.get('nickname', null) == request.resource.data.nickname))
+        && getAfter(/databases/$(database)/documents/nicknames/$(request.resource.data.key)).data.uid == uid;
+      // Account deletion: only the owner, and only together with releasing the nickname.
+      allow delete: if request.auth != null
+        && request.auth.uid == uid
+        && (!(resource.data.get('key', null) is string)
+          || !existsAfter(/databases/$(database)/documents/nicknames/$(resource.data.key))
+          || getAfter(/databases/$(database)/documents/nicknames/$(resource.data.key)).data.uid != uid);
+    }
+
+    // Allow read access to 'daily' collection
+    match /daily/{document=**} {
+      allow read: if true;
+    }
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    function dateKeyOf(t) {
+      return string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day());
+    }
+
+    // Israel is two or three hours ahead of UTC, depending on the season.
+    function isIsraelToday(key) {
+      return key == dateKeyOf(request.time + duration.value(2, 'h'))
+        || key == dateKeyOf(request.time + duration.value(3, 'h'));
+    }
+
+    // What a player's score may contain. Scores are still reported by the browser, so these are
+    // sanity limits (types, ranges, sizes), not proof that the game was really played.
+    function validScoreFields(data) {
+      return data.keys().hasOnly(['uid', 'name', 'pagesVisited', 'timeTaken', 'timestamp', 'mode',
+          'dayKey', 'startTitle', 'goalTitle', 'path', 'fastestPath', 'gaveUp'])
+        && data.name is string && data.name.size() <= 40
+        && data.pagesVisited is int && data.pagesVisited >= 1 && data.pagesVisited <= 1000
+        && data.timeTaken is number && data.timeTaken >= 0 && data.timeTaken <= 31536000
+        && data.timestamp is timestamp && data.timestamp <= request.time + duration.value(10, 'm')
+        && shortText(data.get('startTitle', ''))
+        && shortText(data.get('goalTitle', ''))
+        && data.get('path', []) is list && data.get('path', []).size() <= 1000
+        && (!('fastestPath' in data) || (data.fastestPath is list && data.fastestPath.size() <= 25))
+        && (!('gaveUp' in data) || data.gaveUp is bool)
+        && (!('dayKey' in data) || shortText(data.dayKey));
+    }
+
+    // The name on a score is the player's own saved nickname, so the leaderboard shows only names
+    // that went through the nickname rules (and are unique), never free text.
+    function isOwnNickname(name) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('nickname', null) == name;
+    }
+
+    // Free games get Firestore's random 20-character ids (addDoc), so a free row can never take the
+    // fixed id of someone's daily row or of a bot score.
+    function isAutoId(id) {
+      return id.matches('^[A-Za-z0-9]{20}$');
+    }
+
+    // Daily scores (and the bots' rows) are public: they make up the leaderboard.
+    // Free-game scores can be read only by the player who played them. A query has to ask for
+    // daily rows only, or for the player's own uid, or Firestore turns it down.
+    // A missing document can be read (resource is null), so a save can check whether today's row exists.
+    match /scores/{documentId} {
+      allow read: if resource == null
+        || resource.data.mode != 'free'
+        || (request.auth != null && resource.data.uid == request.auth.uid);
+      // Players save their own scores only. Bot scores are written by the server job.
+      // A daily score has a fixed id per player and day, so each player has one daily row per day.
+      allow create: if isVerified()
+        && request.resource.data.uid == request.auth.uid
+        && validScoreFields(request.resource.data)
+        && isOwnNickname(request.resource.data.name)
+        && (request.resource.data.mode == 'daily' || isAutoId(documentId))
+        && !(request.resource.data.uid in ['wiki-bot', 'wiki-reasoner'])
+        && !isReservedBotName()
+        && request.resource.data.get('bot', false) != true
+        && request.resource.data.get('reasoner', false) != true
+        && request.resource.data.mode in ['daily', 'free']
+        && (request.resource.data.mode == 'free'
+          || (request.resource.data.get('dayKey', null) is string
+            && documentId == 'daily_' + request.auth.uid + '_' + request.resource.data.dayKey
+            && isIsraelToday(request.resource.data.dayKey)));
+      // Scores stay fixed, with two exceptions for the owner: the shortest path may be attached once,
+      // and today's daily row may be replaced by a better result from a replay of the same pair.
+      allow update: if (request.auth != null
+          && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fastestPath'])
+          && !resource.data.keys().hasAny(['fastestPath'])
+          && request.resource.data.fastestPath is list
+          && request.resource.data.fastestPath.size() <= 25)
+        || (isVerified()
+          && resource.data.uid == request.auth.uid
+          && resource.data.mode == 'daily'
+          && resource.data.get('dayKey', null) is string
+          && documentId == 'daily_' + request.auth.uid + '_' + resource.data.dayKey
+          && isIsraelToday(resource.data.dayKey)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'pagesVisited', 'timeTaken', 'timestamp', 'path'])
+          && !isReservedBotName()
+          && validScoreFields(request.resource.data)
+          && isOwnNickname(request.resource.data.name)
+          && (request.resource.data.pagesVisited < resource.data.pagesVisited
+            || (request.resource.data.pagesVisited == resource.data.pagesVisited
+              && request.resource.data.timeTaken < resource.data.timeTaken)));
+      // Account deletion: players may delete their own scores. Bot scores are never deletable here.
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && !(resource.data.uid in ['wiki-bot', 'wiki-reasoner'])
+        && resource.data.get('bot', false) != true
+        && resource.data.get('reasoner', false) != true;
+    }
+    // The next five daily pairs, and the pool of articles that already went live.
+    // Only the desk owner can read or change them.
+    function shortText(value) {
+      return value is string && value.size() <= 300;
+    }
+    function botOrNull(value) {
+      return value == null || value is map;
+    }
+    function validTestSlot(slot) {
+      return slot is map
+        && slot.keys().hasOnly(['dateKey', 'startTitle', 'goalTitle', 'bfs', 'reasoner', 'redrawn'])
+        && shortText(slot.get('dateKey', ''))
+        && shortText(slot.get('startTitle', ''))
+        && shortText(slot.get('goalTitle', ''))
+        && botOrNull(slot.get('bfs', null))
+        && botOrNull(slot.get('reasoner', null))
+        && botOrNull(slot.get('redrawn', null));
+    }
+    function validTestSlots(slots) {
+      return slots is list && slots.size() <= 5
+        && (slots.size() < 1 || validTestSlot(slots[0]))
+        && (slots.size() < 2 || validTestSlot(slots[1]))
+        && (slots.size() < 3 || validTestSlot(slots[2]))
+        && (slots.size() < 4 || validTestSlot(slots[3]))
+        && (slots.size() < 5 || validTestSlot(slots[4]));
+    }
+    function validTestQueueDoc(id, data) {
+      return (id == 'board'
+          && data.keys().hasOnly(['slots', 'publishedDateKey'])
+          && validTestSlots(data.get('slots', []))
+          && shortText(data.get('publishedDateKey', '')))
+        || (id == 'used'
+          && data.keys().hasOnly(['titles'])
+          && data.get('titles', []) is list
+          && data.get('titles', []).size() <= 5000);
+    }
+    match /lotteryQueue/{id} {
+      allow read, write: if isDeskAdmin();
+    }
+    // The test site's own copy of the queue, used by the test admin account and the test site's
+    // unlisted queue page. Any signed-in account may read it and write it, but only in the queue's
+    // own shapes (the board, and the list of used titles). Nothing reads it in production.
+    match /lotteryQueue_test/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if isDeskAdmin()
+        || (request.auth != null && validTestQueueDoc(id, request.resource.data));
+      allow delete: if isDeskAdmin()
+        || (request.auth != null && request.auth.uid == 'C9JAqXVvrNSXadmAMDpOw9aRfAk2');
+    }
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

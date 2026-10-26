@@ -1,0 +1,54 @@
+name: Publish the daily lottery
+
+on:
+  schedule:
+    # GitHub starts scheduled runs late and sometimes skips them, so nothing depends on one run.
+    # Evening runs (from 20:00 Israel time, either UTC+3 or UTC+2) stage tomorrow's pair and its
+    # bot scores in daily/articles.next, stamped at 00:00. The site switches to it at midnight by
+    # itself. The 23:xx run also waits for 00:00 and publishes. Runs after midnight are catch-ups.
+    # The script reads the hour in Asia/Jerusalem, so these UTC times work across DST, and every
+    # step is idempotent (date keys and fixed score ids).
+    - cron: '7 17 * * *'
+    - cron: '7 18 * * *'
+    - cron: '37 18 * * *'
+    - cron: '7 19 * * *'
+    - cron: '37 19 * * *'
+    - cron: '40 20 * * *'
+    - cron: '40 21 * * *'
+    - cron: '10 22 * * *'
+    - cron: '40 22 * * *'
+    - cron: '17 0 * * *'
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report what would be done (no writes, no bot runs)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: lottery-midnight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Writes to the live database, so it runs only from main (a manual run on another branch is skipped).
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install web dependencies
+        run: npm ci --prefix web
+      - name: Publish today's pair and refill the queue
+        run: node web/scripts/publishLottery.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LOTTERY_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}

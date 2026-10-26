@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="משחק ויקיפדיה: עברו מערך הפתיחה לערך המטרה דרך קישורים בלבד."
+    />
+    <title>משחק הוויקיפדיה</title>
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('wiki-theme');
+          var theme = saved === 'dark' || saved === 'light'
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (error) {}
+      })();
+    </script>
+    <link rel="icon" href="/favicon-64.png" type="image/png" sizes="64x64" />
+    <link rel="manifest" href="/manifest.webmanifest?v=2" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-v2.png" sizes="180x180" />
+    <meta name="apple-mobile-web-app-title" content="WikiWiki" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
+    <style>
+      /* Installed-app loading screen. Only shown in standalone mode, and React
+         replaces it on first render, so navy never stays behind any page. */
+      .boot { display: none; }
+      @media (display-mode: standalone), (display-mode: fullscreen) {
+        .boot {
+          position: fixed;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          background: radial-gradient(circle at 50% 40%, #1d4b8f, #14254f 55%, #0a1430);
+        }
+        .boot img { width: 132px; height: 132px; border-radius: 30px; }
+      }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@700&family=Heebo:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"><div class="boot" aria-hidden="true"><img src="/icon-v2-192.png" alt="" /></div></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

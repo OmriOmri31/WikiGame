@@ -1,0 +1,42 @@
+name: Deploy Firestore rules
+
+# Production and the test site share one Firebase project, so the rules go live only from main.
+# A push to test checks that the rules compile and that the deploy would be allowed, without releasing them.
+on:
+  push:
+    branches: [main, test]
+    paths:
+      - firestore.rules
+      - web/scripts/deployRules.js
+      - .github/workflows/firestore-rules.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only validate the rules, do not release them'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firestore-rules
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install web dependencies
+        run: npm ci --prefix web
+      - name: Deploy rules
+        working-directory: web
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          # Rules are released only from main. Any other branch (push or manual run) is a dry run.
+          RULES_DRY_RUN: ${{ (github.ref != 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.dry_run)) && '1' || '' }}
+        run: node scripts/deployRules.js

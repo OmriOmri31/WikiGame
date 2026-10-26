@@ -1,0 +1,771 @@
+/* global __WIKIGAME_TEST__ */
+import { useEffect, useRef, useState } from 'react';
+import {
+  GoogleAuthProvider,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+} from 'firebase/auth';
+import { authErrorMessage } from '../account';
+import { auth } from '../firebase';
+import Stage from '../Stage';
+import { formatDuration } from '../time';
+import { REASONER_NAME } from '../reasonerBot';
+import { clickableVias, suggestArticles, WIKI_BOT_NAME } from '../wikiBot';
+import { SEED_USED_TITLES } from '../usedArticles';
+import { onTestDeskPage } from '../testSite';
+import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
+import { askDeskModel, BFS_MAX_ATTEMPTS, confirmBfsResult, MAX_REDRAWS, solvePair } from '../lotteryBots';
+import {
+  ensureQueue,
+  ensureUsedTitles,
+  redrawSlot,
+  saveSlotResult,
+  slotLabelDate,
+  subscribeQueue,
+  subscribeUsedTitles,
+  titlesChanged,
+  updateSlotTitles,
+} from '../lotteryQueue';
+
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function useStateRef(value) {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
+}
+
+function rowError(error) {
+  if (error?.code === 'missingtitle') return 'הערך לא נמצא בוויקיפדיה. בחרו ערך מהרשימה.';
+  if (error?.code === 'disambiguation') return 'זה דף פירושונים. בחרו ערך מהרשימה.';
+  if (error?.code === 'same') return 'ההתחלה והיעד צריכים להיות ערכים שונים.';
+  if (error?.code === 'permission-denied') return 'אין הרשאה לשמור. פרסמו את כללי Firestore.';
+  return 'לא הצלחנו לשמור.';
+}
+
+function slotHeading(dateKey) {
+  const today = israelDateKey();
+  const when = slotLabelDate(dateKey);
+  if (dateKey === today) return `היום · ${when}`;
+  if (dateKey === addIsraelDays(today, 1)) return `מחר · ${when}`;
+  return when;
+}
+
+function DeskBack({ onBack }) {
+  return (
+    <button className="desk-back" type="button" aria-label="חזרה למשחק" onClick={onBack}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M19 12H6.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M11.2 6.4 5.5 12l5.7 5.6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+function TitleField({
+  id,
+  label,
+  value,
+  disabled,
+  open,
+  items,
+  active,
+  loading,
+  failed,
+  onChange,
+  onKeyDown,
+  onBlur,
+  onPick,
+  onActive,
+  article,
+}) {
+  const listId = `${id}-suggestions`;
+  const activeId = open && items[active] ? `${id}-option-${active}` : undefined;
+  const saved = normalizeTitle(article);
+  return (
+    <div className="desk-field">
+      <label htmlFor={id}>{label}</label>
+      {saved ? (
+        <a
+          className="desk-article"
+          href={articleUrl(saved)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <bdi>{saved}</bdi>
+        </a>
+      ) : null}
+      <input
+        id={id}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={activeId}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
+      />
+      {open ? (
+        <ul className="desk-suggest" id={listId} role="listbox">
+          {loading && items.length === 0 ? <li className="desk-suggest-note">מחפש…</li> : null}
+          {failed && items.length === 0 ? <li className="desk-suggest-note">לא הצלחנו לחפש.</li> : null}
+          {!loading && !failed && items.length === 0 ? <li className="desk-suggest-note">אין ערך כזה.</li> : null}
+          {items.map((item, itemIndex) => (
+            <li key={item.title} role="presentation">
+              <button
+                id={`${id}-option-${itemIndex}`}
+                className={itemIndex === active ? 'is-active' : ''}
+                type="button"
+                role="option"
+                aria-selected={itemIndex === active}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => onActive(itemIndex)}
+                onClick={() => onPick(item.title)}
+              >
+                <span>{item.title}</span>
+                {item.description ? <small>{item.description}</small> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function pathTitles(result) {
+  if (!Array.isArray(result?.path)) return [];
+  return result.path.map((title) => normalizeTitle(title)).filter(Boolean);
+}
+
+function DeskPath({ result, verify, onVia }) {
+  const titles = pathTitles(result);
+  const stored = Array.isArray(result?.pathVia) ? result.pathVia.map((item) => item || '') : [];
+  const storedKey = stored.join('\n');
+  const titleKey = titles.join('\n');
+  const [vias, setVias] = useState(stored);
+  const [checking, setChecking] = useState(Boolean(verify) && titles.length > 1);
+
+  useEffect(() => {
+    if (!verify || titles.length < 2) {
+      setVias(stored);
+      setChecking(false);
+      return undefined;
+    }
+    let cancel = false;
+    setChecking(true);
+    clickableVias(titles).then((notes) => {
+      if (cancel) return;
+      setChecking(false);
+      if (!notes.ok) return;
+      setVias(notes.via);
+      if (notes.via.join('\n') !== storedKey) onVia?.(notes.via);
+    }).catch((error) => {
+      console.error(error);
+      if (!cancel) setChecking(false);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [verify, titleKey, storedKey]);
+
+  if (titles.length === 0) return null;
+  return (
+    <div className="desk-path-block">
+      {checking ? <p className="status path-via-status">בודקים את נוסח הקישור בדפים…</p> : null}
+      <p className="path-line desk-path" dir="rtl">
+        {titles.map((title, index) => {
+          const via = index > 0 ? (vias[index - 1] || '') : '';
+          return (
+            <span className="path-step" key={`${title}-${index}`}>
+              {index > 0 ? <span className="path-sep" aria-hidden="true">←</span> : null}
+              {via ? <span className="path-via">לחצו על <bdi>{via}</bdi></span> : null}
+              <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
+                <bdi>{title}</bdi>
+              </a>
+            </span>
+          );
+        })}
+      </p>
+    </div>
+  );
+}
+
+function botLine(result, running, attempt = 1) {
+  if (running) return attempt > 1 ? `רץ שוב… ניסיון ${attempt} מתוך ${BFS_MAX_ATTEMPTS}` : 'רץ…';
+  if (!result) return 'עדיין לא רץ';
+  const tries = result.attempts || 1;
+  if (result.status === 'error') {
+    const message = result.error || 'נכשל';
+    return tries > 1 ? `${message} · נכשל ב־${tries} ניסיונות` : message;
+  }
+  if (result.gaveUp) {
+    const line = result.pagesVisited ? `ויתר אחרי ${result.pagesVisited} דפים` : 'לא נמצאה דרך';
+    return tries > 1 ? `${line} · אחרי ${tries} ניסיונות` : line;
+  }
+  const pages = `${result.pagesVisited} דפים`;
+  const time = formatDuration(result.timeTaken, { milliseconds: false });
+  return tries > 1 ? `${pages} · ${time} · הצליח בניסיון ${tries} (הקודמים נכשלו)` : `${pages} · ${time}`;
+}
+
+function DeskSignIn({ onBack }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    const nextEmail = email.trim();
+    if (!validEmail(nextEmail)) {
+      setError(nextEmail ? 'כתובת האימייל אינה תקינה.' : 'יש להזין אימייל.');
+      return;
+    }
+    if (!password) {
+      setError('יש להזין סיסמה.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await signInWithEmailAndPassword(auth, nextEmail, password);
+    } catch (signInError) {
+      console.error(signInError);
+      setError(authErrorMessage(signInError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function google() {
+    setBusy(true);
+    setError('');
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (popupError) {
+      if (popupError?.code === 'auth/popup-closed-by-user' || popupError?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      if (popupError?.code !== 'auth/popup-blocked' && popupError?.code !== 'auth/operation-not-supported-in-this-environment') {
+        console.error(popupError);
+        setError(authErrorMessage(popupError));
+        return;
+      }
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (redirectError) {
+        console.error(redirectError);
+        setError(authErrorMessage(redirectError));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Stage className="stage-home">
+      <DeskBack onBack={onBack} />
+      <main className="desk-page is-gate">
+        <h1>כניסה</h1>
+        <form className="mail-form" onSubmit={submit} noValidate>
+          <label htmlFor="desk-email">אימייל</label>
+          <input
+            id="desk-email"
+            type="email"
+            dir="ltr"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            disabled={busy}
+          />
+          <label htmlFor="desk-password">סיסמה</label>
+          <input
+            id="desk-password"
+            type="password"
+            dir="ltr"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            disabled={busy}
+          />
+          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          <button className="primary" type="submit" disabled={busy}>
+            {busy ? 'רגע…' : 'התחברות'}
+          </button>
+        </form>
+        <button className="secondary" type="button" onClick={google} disabled={busy}>
+          התחברות עם Google
+        </button>
+      </main>
+    </Stage>
+  );
+}
+
+function Desk({ user, onPlay, onBack }) {
+  // The test site's unlisted queue page: the reasoner (Gemini) is for the admin only.
+  const reasonerOff = __WIKIGAME_TEST__ && onTestDeskPage();
+  const [board, setBoard] = useState(null);
+  const [usedTitles, setUsedTitles] = useState(null);
+  const [usedError, setUsedError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [drafts, setDrafts] = useState({});
+  const [rowErrors, setRowErrors] = useState({});
+  const [runs, setRuns] = useState({});
+  const [signingOut, setSigningOut] = useState(false);
+  const boardRef = useStateRef(board);
+  const draftsRef = useStateRef(drafts);
+  const saveChain = useRef(Promise.resolve());
+  const runningRef = useRef(new Set());
+  const latestRunRef = useRef({});
+  const suggestTimer = useRef(0);
+  const suggestGen = useRef(0);
+  const [suggest, setSuggest] = useState(null);
+  const [openPaths, setOpenPaths] = useState({});
+
+  useEffect(() => () => window.clearTimeout(suggestTimer.current), []);
+
+  useEffect(() => {
+    if (!board) return undefined;
+    let cancelled = false;
+    const pending = [];
+    board.slots.forEach((slot, index) => {
+      const bfs = slot.bfs;
+      if (!bfs || bfs.checked || bfs.status === 'error' || bfs.gaveUp) return;
+      if (!Array.isArray(bfs.path) || bfs.path.length < 2) return;
+      if (runningRef.current.has(index)) return;
+      pending.push({ index, slot });
+    });
+    if (pending.length === 0) return undefined;
+
+    (async () => {
+      for (const item of pending) {
+        if (cancelled) return;
+        try {
+          const next = await confirmBfsResult(item.slot.bfs);
+          if (cancelled || !next || next === item.slot.bfs) continue;
+          await saveSlotResult(item.index, 'bfs', item.slot.startTitle, item.slot.goalTitle, next);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [board, runs]);
+
+  useEffect(() => {
+    let live = true;
+    let latestUsed = null;
+    const seeded = (titles) => SEED_USED_TITLES.every((title) => (titles || []).includes(title));
+    ensureUsedTitles().catch((error) => {
+      console.error(error);
+      if (live && !seeded(latestUsed)) {
+        setUsedError('לא הצלחנו לשמור את מאגר הערכים.');
+      }
+    });
+    const stopUsed = subscribeUsedTitles((titles, error) => {
+      if (!live) return;
+      if (error) {
+        setUsedError('לא הצלחנו לטעון את מאגר הערכים.');
+        return;
+      }
+      latestUsed = titles;
+      if (seeded(titles)) setUsedError('');
+      setUsedTitles(titles);
+    });
+    ensureQueue().catch((error) => {
+      console.error(error);
+      if (live) setLoadError('לא הצלחנו להכין את התור.');
+    });
+    const stop = subscribeQueue((next, error) => {
+      if (!live) return;
+      if (error) {
+        setLoadError('אין הרשאה לקרוא את התור. פרסמו את כללי Firestore.');
+        return;
+      }
+      setBoard(next);
+    });
+    return () => {
+      live = false;
+      stop();
+      stopUsed();
+    };
+  }, []);
+
+  function draftKey(index, field) {
+    return `${index}:${field}`;
+  }
+
+  function fieldValue(index, field, slot, source = drafts) {
+    const draft = source[draftKey(index, field)];
+    return draft === undefined ? slot[field] : draft;
+  }
+
+  function setDraft(index, field, value) {
+    setDrafts((current) => ({ ...current, [draftKey(index, field)]: value }));
+    setRowErrors((current) => ({ ...current, [index]: '' }));
+  }
+
+  function editTitle(index, field, value) {
+    setDraft(index, field, value);
+    const key = draftKey(index, field);
+    const query = normalizeTitle(value);
+    window.clearTimeout(suggestTimer.current);
+    if (!query) {
+      suggestGen.current += 1;
+      setSuggest(null);
+      return;
+    }
+    const generation = suggestGen.current + 1;
+    suggestGen.current = generation;
+    setSuggest({ key, items: [], active: 0, loading: true, failed: false });
+    suggestTimer.current = window.setTimeout(async () => {
+      try {
+        const items = await suggestArticles(query);
+        if (suggestGen.current !== generation) return;
+        setSuggest({ key, items, active: 0, loading: false, failed: false });
+      } catch (error) {
+        console.error(error);
+        if (suggestGen.current !== generation) return;
+        setSuggest({ key, items: [], active: 0, loading: false, failed: true });
+      }
+    }, 150);
+  }
+
+  function moveSuggestion(delta) {
+    setSuggest((current) => {
+      if (!current || current.items.length === 0) return current;
+      const count = current.items.length;
+      const active = (current.active + delta + count) % count;
+      return { ...current, active };
+    });
+  }
+
+  function clearDrafts(index) {
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[draftKey(index, 'startTitle')];
+      delete next[draftKey(index, 'goalTitle')];
+      return next;
+    });
+  }
+
+  function queueCommit(index, overrides) {
+    const run = () => commitNow(index, overrides);
+    const job = saveChain.current.then(run, run);
+    saveChain.current = job.then(() => {}, () => {});
+    return job;
+  }
+
+  // A changed pair loses its old bot results (see updateSlotTitles), so both bots run again
+  // right away for the new pair.
+  async function commit(index, overrides) {
+    const saved = await queueCommit(index, overrides);
+    if (saved?.changed) runBots(index, saved.start, saved.goal);
+    return saved;
+  }
+
+  async function commitNow(index, overrides = {}) {
+    const slot = boardRef.current?.slots?.[index];
+    if (!slot) return null;
+    const start = normalizeTitle(overrides.startTitle ?? fieldValue(index, 'startTitle', slot, draftsRef.current));
+    const goal = normalizeTitle(overrides.goalTitle ?? fieldValue(index, 'goalTitle', slot, draftsRef.current));
+    if (!titlesChanged(slot, start, goal)) {
+      clearDrafts(index);
+      return { start: slot.startTitle, goal: slot.goalTitle, changed: false };
+    }
+    if (!start || !goal) {
+      clearDrafts(index);
+      setRowErrors((current) => ({ ...current, [index]: 'יש למלא התחלה ויעד.' }));
+      return null;
+    }
+    try {
+      const saved = await updateSlotTitles(index, start, goal);
+      clearDrafts(index);
+      return { ...saved, changed: true };
+    } catch (error) {
+      console.error(error);
+      clearDrafts(index);
+      setRowErrors((current) => ({ ...current, [index]: rowError(error) }));
+      return null;
+    }
+  }
+
+  function pickTitle(index, field, title) {
+    suggestGen.current += 1;
+    window.clearTimeout(suggestTimer.current);
+    setSuggest(null);
+    setDraft(index, field, title);
+    commit(index, { [field]: title });
+  }
+
+  async function refresh(index) {
+    const saved = await queueCommit(index);
+    if (saved?.start && saved?.goal) await runBots(index, saved.start, saved.goal);
+  }
+
+  // Both bots run for the pair. The search retries itself when it fails (see solvePair); when the
+  // pair has no route at all, a new pair is drawn for the slot and the bots run on it.
+  async function runBots(index, start, goal, redraws = 0) {
+    if (!start || !goal) return;
+    const runKey = `${index}\n${start}\n${goal}`;
+    if (runningRef.current.has(runKey)) return;
+    runningRef.current.add(runKey);
+    latestRunRef.current[index] = runKey;
+    const latest = () => latestRunRef.current[index] === runKey;
+    setOpenPaths((current) => ({ ...current, [`${index}:bfs`]: false, [`${index}:reasoner`]: false }));
+    setRuns((current) => ({ ...current, [index]: { bfs: true, reasoner: !reasonerOff, attempt: 1 } }));
+    let nextPair = null;
+    try {
+      setRowErrors((current) => ({ ...current, [index]: '' }));
+      const finish = (key) => {
+        if (!latest()) return;
+        setRuns((current) => ({
+          ...current,
+          [index]: { ...current[index], [key]: false },
+        }));
+      };
+      const save = (key, failure) => async (result) => {
+        try {
+          await saveSlotResult(index, key, start, goal, result);
+        } catch (error) {
+          console.error(error);
+          if (latest()) setRowErrors((current) => ({ ...current, [index]: failure }));
+        } finally {
+          finish(key);
+        }
+      };
+      const solved = await solvePair(start, goal, (prompt, schema, maxOutputTokens) => (
+        askDeskModel(user, prompt, schema, maxOutputTokens)
+      ), {
+        onAttempt: (attempt) => {
+          if (latest()) setRuns((current) => ({ ...current, [index]: { ...current[index], attempt } }));
+        },
+        onBfs: save('bfs', 'החיפוש נכשל.'),
+        onReasoner: save('reasoner', 'וויקי בוט נכשל.'),
+        skipReasoner: reasonerOff,
+      });
+      if (solved.noPath && latest()) {
+        if (redraws >= MAX_REDRAWS) {
+          setRowErrors((current) => ({ ...current, [index]: 'אין דרך גם בזוג שהוגרל מחדש. בחרו זוג ידנית.' }));
+        } else {
+          nextPair = await redrawSlot(index, start, goal);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      if (latest()) setRowErrors((current) => ({ ...current, [index]: 'הבוטים נכשלו.' }));
+    } finally {
+      runningRef.current.delete(runKey);
+      if (latest()) setRuns((current) => ({ ...current, [index]: { bfs: false, reasoner: false } }));
+    }
+    if (nextPair) await runBots(index, nextPair.start, nextPair.goal, redraws + 1);
+  }
+
+  async function leave() {
+    setSigningOut(true);
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error(error);
+      setSigningOut(false);
+    }
+  }
+
+  const slots = board?.slots || [];
+
+  return (
+    <Stage>
+      <DeskBack onBack={onBack} />
+      <main className="desk-page">
+        <header className="desk-head">
+          <h1>חמשת הימים הבאים</h1>
+          <p className="lede">
+            בכל יום בחצות המשחק הראשון מתפרסם, השאר זזים מקום אחד קדימה, ונוסף משחק חדש בסוף.
+          </p>
+          {reasonerOff ? <p className="status">דף בדיקה: התור כאן נפרד מהתור האמיתי.</p> : null}
+        </header>
+        {loadError ? <p className="form-error" role="alert">{loadError}</p> : null}
+        {(!board || slots.length === 0) && !loadError ? <p className="status">מכין את התור…</p> : null}
+        <div className="desk-list">
+          {slots.map((slot, index) => {
+            const running = runs[index];
+            const busy = Boolean(running?.bfs || running?.reasoner);
+            const start = fieldValue(index, 'startTitle', slot);
+            const goal = fieldValue(index, 'goalTitle', slot);
+            return (
+              <section className="desk-card" key={`${slot.dateKey}-${index}`} aria-label={slotHeading(slot.dateKey)}>
+                <h2>{slotHeading(slot.dateKey)}</h2>
+                {slot.redrawn ? (
+                  <p className="status desk-redrawn">
+                    הוגרל מחדש{slot.redrawn.count > 1 ? ` (${slot.redrawn.count} פעמים)` : ''}: לא נמצאה דרך בין{' '}
+                    <bdi>{slot.redrawn.startTitle}</bdi> ל־<bdi>{slot.redrawn.goalTitle}</bdi>
+                  </p>
+                ) : null}
+                <div className="desk-fields">
+                  {['startTitle', 'goalTitle'].map((field) => {
+                    const key = draftKey(index, field);
+                    const menu = suggest?.key === key ? suggest : null;
+                    return (
+                      <TitleField
+                        key={field}
+                        id={`${field}-${index}`}
+                        label={field === 'startTitle' ? 'התחלה' : 'יעד'}
+                        value={field === 'startTitle' ? start : goal}
+                        article={field === 'startTitle' ? slot.startTitle : slot.goalTitle}
+                        open={Boolean(menu)}
+                        items={menu?.items || []}
+                        active={menu?.active || 0}
+                        loading={Boolean(menu?.loading)}
+                        failed={Boolean(menu?.failed)}
+                        onChange={(value) => editTitle(index, field, value)}
+                        onPick={(title) => pickTitle(index, field, title)}
+                        onActive={(itemIndex) => {
+                          setSuggest((current) => (
+                            current && current.key === key
+                              ? { ...current, active: itemIndex }
+                              : current
+                          ));
+                        }}
+                        onBlur={() => {
+                          if (suggest?.key === key) setSuggest(null);
+                          commit(index);
+                        }}
+                        onKeyDown={(event) => {
+                          if (suggest?.key !== key) return;
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            moveSuggestion(1);
+                          } else if (event.key === 'ArrowUp') {
+                            event.preventDefault();
+                            moveSuggestion(-1);
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setSuggest(null);
+                          } else if (event.key === 'Enter' && suggest.items[suggest.active]) {
+                            event.preventDefault();
+                            pickTitle(index, field, suggest.items[suggest.active].title);
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                {[['bfs', WIKI_BOT_NAME, slot.bfs], ['reasoner', REASONER_NAME, slot.reasoner]].map(([key, name, result]) => {
+                  const pathKey = `${index}:${key}`;
+                  const open = Boolean(openPaths[pathKey]);
+                  const available = !running?.[key] && pathTitles(result).length > 0 && !(key === 'reasoner' && reasonerOff);
+                  return (
+                    <div key={key}>
+                      <div className="desk-bot-row">
+                        <p className="desk-bot">{name}: {key === 'reasoner' && reasonerOff ? 'לא זמין בדף הזה' : botLine(result, running?.[key], key === 'bfs' ? running?.attempt : 1)}</p>
+                        {available ? (
+                          <button
+                            className="text-button compact"
+                            type="button"
+                            aria-expanded={open}
+                            onClick={() => setOpenPaths((current) => ({ ...current, [pathKey]: !current[pathKey] }))}
+                          >
+                            {open ? 'הסתר דרך' : 'הדרך'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {key === 'bfs' && result && !result.checked && result.status !== 'error' && !result.gaveUp && pathTitles(result).length > 1 ? (
+                        <p className="status path-via-status">בודקים שהקישורים מופיעים בדפים…</p>
+                      ) : null}
+                      {open && available ? (
+                        <DeskPath
+                          result={result}
+                          verify={key === 'bfs'}
+                          onVia={key === 'bfs' ? (via) => {
+                            saveSlotResult(index, 'bfs', slot.startTitle, slot.goalTitle, {
+                              ...result,
+                              pathVia: via,
+                              checked: true,
+                            });
+                          } : null}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {rowErrors[index] ? <p className="form-error" role="alert">{rowErrors[index]}</p> : null}
+                <div className="desk-actions">
+                  <button
+                    className="desk-button"
+                    type="button"
+                    disabled={busy || !slot.startTitle || !slot.goalTitle}
+                    onClick={() => refresh(index)}
+                  >
+                    רענון
+                  </button>
+                  <button
+                    className="desk-button is-play"
+                    type="button"
+                    disabled={!slot.startTitle || !slot.goalTitle}
+                    onClick={() => onPlay({ startTitle: slot.startTitle, goalTitle: slot.goalTitle })}
+                  >
+                    שחק
+                  </button>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+        <section className="desk-card desk-used" aria-label="ערכים שכבר שימשו">
+          <h2>ערכים שכבר שימשו{usedTitles?.length ? ` · ${usedTitles.length}` : ''}</h2>
+          <p className="lede">
+            הגרלה חדשה לא בוחרת ערך מהרשימה. ערך נכנס לכאן רק אחרי שהזוג שלו פורסם, לא בזמן שהוא בתור.
+          </p>
+          {usedError ? <p className="form-error" role="alert">{usedError}</p> : null}
+          {!usedError && !usedTitles?.length ? <p className="status">טוען את המאגר…</p> : null}
+          {usedTitles && usedTitles.length > 0 ? (
+            <ul className="desk-used-list">
+              {usedTitles.map((title) => (
+                <li key={title}>
+                  <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">
+                    <bdi>{title}</bdi>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+        <button className="text-button danger" type="button" onClick={leave} disabled={signingOut}>
+          התנתקות
+        </button>
+      </main>
+    </Stage>
+  );
+}
+
+export default function AdminScreen({ user, onPlay, onBack }) {
+  if (!user) return <DeskSignIn onBack={onBack} />;
+  return <Desk user={user} onPlay={onPlay} onBack={onBack} />;
+}

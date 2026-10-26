@@ -1,0 +1,18 @@
+import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
+import { readFileSync } from 'fs';
+import { doc, setDoc, getDoc, addDoc, collection, Timestamp } from 'firebase/firestore';
+const env = await initializeTestEnvironment({ projectId: 'demo-wiki-admin', firestore: { rules: readFileSync(new URL('../firestore.rules', import.meta.url),'utf8'), host:'127.0.0.1', port:8085 } });
+const ta = env.authenticatedContext('C9JAqXVvrNSXadmAMDpOw9aRfAk2', { email_verified: false, firebase:{sign_in_provider:'password'} }).firestore();
+const owner = env.authenticatedContext('bsoHTJvKDiOr3qzvmL1EIHdnsji1', { email_verified: true }).firestore();
+const other = env.authenticatedContext('x', { email_verified: true }).firestore();
+const t = async (l,p,ok)=>{try{await (ok?assertSucceeds:assertFails)(p);console.log('PASS',l)}catch(e){console.log('FAIL',l);process.exitCode=1}};
+await t('test admin write test queue', setDoc(doc(ta,'lotteryQueue_test','board'),{slots:[]}), true);
+await t('test admin read test queue', getDoc(doc(ta,'lotteryQueue_test','used')), true);
+await t('test admin read real queue blocked', getDoc(doc(ta,'lotteryQueue','board')), false);
+await t('test admin write real queue blocked', setDoc(doc(ta,'lotteryQueue','board'),{slots:[]}), false);
+await t('test admin write daily blocked', setDoc(doc(ta,'daily','articles'),{a:1}), false);
+await t('test admin score blocked (unverified)', addDoc(collection(ta,'scores'),{uid:'C9JAqXVvrNSXadmAMDpOw9aRfAk2',mode:'free',name:'t',pagesVisited:1,timeTaken:1,timestamp:Timestamp.now()}), false);
+await t('owner test queue ok', getDoc(doc(owner,'lotteryQueue_test','board')), true);
+await t('owner real queue ok', getDoc(doc(owner,'lotteryQueue','board')), true);
+await t('other signed-in account reads test queue', getDoc(doc(other,'lotteryQueue_test','board')), true);
+await env.cleanup();

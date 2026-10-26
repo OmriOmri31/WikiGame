@@ -1,0 +1,14 @@
+{
+  "name": "wikigame-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Firestore security rules tests. Needs Java for the emulator.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-wiki \"node run-all.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0",
+    "firebase-tools": "^14.27.0"
+  }
+}
