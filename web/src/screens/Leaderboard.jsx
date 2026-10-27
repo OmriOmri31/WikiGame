@@ -17,6 +17,7 @@ import { isReasoner, REASONER_NAME } from '../reasonerBot';
 import { isWikiBot, pathLinkNames, WIKI_BOT_NAME } from '../wikiBot';
 import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
 import { israelMidnightMs, scoreDateKey } from '../dailyPair';
+import { shareResult } from '../share';
 
 const FREE_PAGE = 20;
 
@@ -104,7 +105,29 @@ function winKey(row) {
   return `${start}\n${goal}`;
 }
 
-function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, showPath = true, showFastest = false }) {
+// Shares the player's own result (spoiler-free for the daily game). Where there is no share
+// sheet the text is copied, and the button says so for a moment.
+function ShareButton({ row }) {
+  const [note, setNote] = useState('');
+  const timerRef = useRef(0);
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  async function share() {
+    const outcome = await shareResult(row);
+    if (outcome !== 'copied' && outcome !== 'failed') return;
+    setNote(outcome === 'copied' ? 'הועתק' : 'לא הצלחנו להעתיק');
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setNote(''), 2000);
+  }
+
+  return (
+    <button className="text-button compact" type="button" onClick={share}>
+      <span aria-live="polite">{note || 'שיתוף'}</span>
+    </button>
+  );
+}
+
+function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, allowShare = false, showPath = true, showFastest = false }) {
   const replayReady = allowReplay && canReplay(row);
   return (
     <div className="score-actions">
@@ -128,6 +151,7 @@ function ScoreActions({ row, onShowPath, onShowFastest, onReplay, allowReplay, s
           שחק שוב
         </button>
       ) : null}
+      {allowShare && !row.gaveUp ? <ShareButton row={row} /> : null}
     </div>
   );
 }
@@ -150,7 +174,7 @@ function OfficialMark() {
   );
 }
 
-function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, showPath, anchor = true }) {
+function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, allowShare, showPath, anchor = true }) {
   return (
     <div
       id={anchor ? `score-${row.id}` : undefined}
@@ -174,13 +198,14 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, s
         onShowPath={onShowPath}
         onReplay={onReplay}
         allowReplay={allowReplay}
+        allowShare={allowShare}
         showPath={showPath}
       />
     </div>
   );
 }
 
-function FreePlayRow({ row, highlighted, searching, onShowPath, onShowFastest, onReplay, allowReplay }) {
+function FreePlayRow({ row, highlighted, searching, onShowPath, onShowFastest, onReplay, allowReplay, allowShare }) {
   return (
     <div
       id={`score-${row.id}`}
@@ -206,6 +231,7 @@ function FreePlayRow({ row, highlighted, searching, onShowPath, onShowFastest, o
         onShowFastest={onShowFastest}
         onReplay={onReplay}
         allowReplay={allowReplay}
+        allowShare={allowShare}
         showPath={savedPath(row).length > 0}
         showFastest={Array.isArray(row.fastestPath)}
       />
@@ -520,6 +546,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
         onShowPath={showPlayed}
         onReplay={replay}
         allowReplay={isOwnRow(row)}
+        allowShare={isOwnRow(row)}
         showPath={showDailyPath(row)}
         anchor={anchor}
       />
@@ -695,6 +722,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                         onShowFastest={showFastest}
                         onReplay={replay}
                         allowReplay
+                        allowShare
                       />
                     );
                   })}
