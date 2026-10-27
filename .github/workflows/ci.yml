@@ -109,7 +109,7 @@ jobs:
         run: |
           node scripts/ci/audit.mjs web --omit=dev
           node scripts/ci/audit.mjs e2e
-          node scripts/ci/audit.mjs rules-tests --report-only
+          node scripts/ci/audit.mjs rules-tests
 
   secrets:
     name: Secret scan and repo checks

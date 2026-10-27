@@ -71,8 +71,8 @@ if (mode === 'testsite') {
     for (const { file } of find(value)) problems.push(`${file}: production build contains a test-site value`);
   }
   for (const { file } of find(DESK_PATH)) problems.push(`${file}: production build contains something shaped like the test desk path`);
-  // audit-allowlist.json allows a gRPC advisory because the browser build has no gRPC client.
-  for (const { file } of find(/getAuthContext|@grpc\/grpc-js/)) problems.push(`${file}: the gRPC client is in the browser build (see audit-allowlist.json)`);
+  // The browser build must never carry a gRPC client (grpc-js is server/Node-only; see TESTING.md).
+  for (const { file } of find(/getAuthContext|@grpc\/grpc-js/)) problems.push(`${file}: the gRPC client is in the browser build (see TESTING.md, npm audit)`);
   check(find('wikigame-5ebec').length > 0, 'production build has no Firebase config for wikigame-5ebec');
 
   // Security headers, and the CSP hash of the inline theme script in the *built* index.html.
