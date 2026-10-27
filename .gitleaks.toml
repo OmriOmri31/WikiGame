@@ -11,6 +11,6 @@ regexes = ['''^AIzaSyCKKmyF_NJsrH88s1bolUoGUhT9XowlXhQ$''']
 [[allowlists]]
 description = "Firebase Auth user ids in the rules are ids, not secrets"
 condition = "AND"
-paths = ['''^firestore\.rules$''']
+paths = ['''(^|/)firestore\.rules$''']
 regexTarget = "line"
 regexes = ['''request\.auth\.uid ==''']
