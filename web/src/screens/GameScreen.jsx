@@ -1,9 +1,10 @@
 /* global __WIKIGAME_TEST__ */
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { addDoc, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { addDoc, collection, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
 import { rememberGuestResult } from '../guestClaim';
 import { db } from '../firebase';
+import { readDailyDoc, rememberDailyPair, seenDailyPair } from '../dailyDoc';
 import { saveLocalScore } from '../localScores';
 import { saveDailyScore, saveLocalDaily } from '../dailyScore';
 import { pageTitle } from '../testSite';
@@ -14,7 +15,7 @@ import GameTools, { FindBar } from '../GameTools';
 import { guardText, onGuardedCopy } from '../findGuard';
 import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
 import Sheet from '../Sheet';
-import { adoptFastestSearch, beginFastestSearch, fastestPathNow, publishFastestPath } from '../fastestSearch';
+import { fastestPathNow, publishFastestPath, stopFastestSearches } from '../fastestSearch';
 import { formatDuration } from '../time';
 import { liveDailyPair } from '../dailyPair';
 import { WIKIPEDIA_LICENSE_URL } from '../legal';
@@ -84,6 +85,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const [fatal, setFatal] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [toast, setToast] = useState('');
+  const [slowLoad, setSlowLoad] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [dailyNote, setDailyNote] = useState('');
   const [congratsOpen, setCongratsOpen] = useState(false);
@@ -201,6 +203,17 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const fixedStart = pair?.startTitle || '';
   const fixedGoal = pair?.goalTitle || '';
 
+  // A tap on a link dims the page and runs the thin bar at once. If the article takes a moment,
+  // a small note says so, so a slow connection never looks like a dead link.
+  useEffect(() => {
+    if (!loading || !article?.title) {
+      setSlowLoad(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setSlowLoad(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [loading, article?.title]);
+
   function showToast(message) {
     setToast(message);
     window.clearTimeout(toastTimerRef.current);
@@ -294,7 +307,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       applyBack({ article: next, html });
     } catch (error) {
       console.error(error);
-      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');
+      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך. אפשר לנסות שוב.');
     } finally {
       if (run === runRef.current) {
         loadingRef.current = false;
@@ -321,7 +334,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         const picked = await pickFreePlayPair();
         return { start: picked.start, goal: picked.goal, fixed: false };
       }
-      const snapshot = await getDoc(doc(db, 'daily', 'articles'));
+      const snapshot = await readDailyDoc();
       if (!snapshot.exists()) throw new Error('missing');
       const pair = liveDailyPair(snapshot.data());
       const goal = normalizeTitle(pair.goal);
@@ -334,7 +347,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     // only if that pair is today's live pair.
     async function todaysDailyKey(start, goal) {
       try {
-        const snapshot = await getDoc(doc(db, 'daily', 'articles'));
+        const snapshot = await readDailyDoc();
         if (!snapshot.exists()) return '';
         const live = liveDailyPair(snapshot.data());
         if (!live.live) return '';
@@ -351,21 +364,51 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       setFatal('');
       setLoading(true);
       loadingRef.current = true;
+      // Articles this device can already name start loading while the pair is chosen: today's
+      // daily pair as this device opened it before, and the page a resumed game stopped on.
+      // They are used only if the chosen pair turns out to be the same.
+      const early = new Map();
+      const startEarly = (title) => {
+        const key = normalizeTitle(title);
+        if (!key || early.has(key)) return;
+        const request = fetchArticle(key);
+        request.catch(() => {});
+        early.set(key, request);
+      };
+      const isPlainDaily = mode !== 'free' && !lockedPairRef.current && !(fixedStart && fixedGoal);
+      if (isPlainDaily) {
+        const seen = seenDailyPair(israelDateKey(new Date()));
+        if (seen) {
+          startEarly(seen.start);
+          startEarly(seen.goal);
+        }
+      }
+      if (resumeRef.current?.currentTitle) startEarly(resumeRef.current.currentTitle);
+      const loadArticle = async (title) => {
+        const request = early.get(normalizeTitle(title));
+        if (request) {
+          try {
+            return await request;
+          } catch {
+            // Fall through to a fresh request.
+          }
+        }
+        return fetchArticle(title);
+      };
+
       try {
         let chosen = await chooseTitles();
-        if (mode === 'free') beginFastestSearch(chosen.start, chosen.goal);
         let startArticle;
         let targetArticle;
         for (let index = 0; index < 3; index += 1) {
           [startArticle, targetArticle] = await Promise.all([
-            fetchArticle(chosen.start),
-            fetchArticle(chosen.goal),
+            loadArticle(chosen.start),
+            loadArticle(chosen.goal),
           ]);
           if (!sameTitle(startArticle.title, targetArticle.title)) break;
           if (chosen.fixed || index === 2) throw new Error('same');
           chosen = await chooseTitles();
-          if (mode === 'free') beginFastestSearch(chosen.start, chosen.goal);
-        }
+          }
         const [startHtml, targetHtml] = await Promise.all([
           prepareArticleHtml(startArticle.html),
           prepareArticleHtml(targetArticle.html),
@@ -387,7 +430,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         let playingArticle = startArticle;
         let playingHtml = startHtml;
         if (snapshot && !sameTitle(snapshot.currentTitle, startArticle.title)) {
-          playingArticle = await fetchArticle(snapshot.currentTitle);
+          playingArticle = await loadArticle(snapshot.currentTitle);
           if (cancelled) return;
           playingHtml = await prepareArticleHtml(playingArticle.html);
           if (cancelled) return;
@@ -395,13 +438,11 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         const path = snapshot?.path?.length ? snapshot.path.slice() : [startArticle.title];
         path[path.length - 1] = playingArticle.title;
 
-        if (mode === 'free') {
-          adoptFastestSearch(chosen.start, chosen.goal, startArticle.title, targetArticle.title);
-        }
         lockedPairRef.current = {
           start: startArticle.title,
           goal: targetArticle.title,
         };
+        if (dailyKeyRef.current && !snapshot) rememberDailyPair(dailyKeyRef.current, chosen.start, chosen.goal);
         goalTitleRef.current = targetArticle.title;
         currentTitleRef.current = playingArticle.title;
         startTitleRef.current = startArticle.title;
@@ -434,6 +475,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       }
     }
 
+    // A new game (or another try) stops any route search still running for an earlier one.
+    stopFastestSearches();
     loadGame();
     return () => {
       cancelled = true;
@@ -793,7 +836,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       persistSession();
     } catch (error) {
       console.error(error);
-      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך.');
+      showToast(error.code === 'missingtitle' ? 'הערך לא נמצא.' : 'לא הצלחנו לטעון את הערך. אפשר לנסות שוב.');
     } finally {
       if (run === runRef.current) {
         loadingRef.current = false;
@@ -920,6 +963,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       </div>
 
       {toast ? <div className="toast" role="status">{toast}</div> : null}
+      {!toast && slowLoad ? <div className="toast loading-note" role="status">טוען את הערך…</div> : null}
 
       {goalArticle ? (
         <Sheet

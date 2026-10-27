@@ -5,14 +5,20 @@ export const WIKI_BOT_UID = 'wiki-bot';
 export const WIKI_BOT_MAX_PAGES = 25;
 
 const API = 'https://he.wikipedia.org/w/api.php';
-const REQUEST_LIMIT = 3;
+const IN_BROWSER = typeof window !== 'undefined';
+// The server job (the nightly lottery) may run a few requests at once. In a player's browser
+// the search runs one request at a time, after the game, so it never competes with play.
+const REQUEST_LIMIT = IN_BROWSER ? 1 : 3;
 
-// Wikimedia throttles clients that don't identify themselves. Browsers can't set User-Agent, so
-// they send Api-User-Agent; the server job (Node) sends a real User-Agent with a contact page.
+// The server job (Node) identifies itself with a real User-Agent that has a contact page, as
+// Wikimedia asks of bots. In the browser, a custom Api-User-Agent header makes every request
+// send an extra CORS permission check first (Wikipedia doesn't let browsers remember it), which
+// doubled the requests. Browser requests already carry the browser's own User-Agent and an
+// Origin header naming this site, the same as the article requests, so they go without it.
 const BOT_AGENT = 'WikiWikiBot/1.0 (https://wikiwiki-game.netlify.app; https://github.com/OmriOmri31/WikiGame)';
-const WIKI_HEADERS = typeof window === 'undefined'
-  ? { 'User-Agent': BOT_AGENT, 'Api-User-Agent': BOT_AGENT }
-  : { 'Api-User-Agent': BOT_AGENT };
+const WIKI_HEADERS = IN_BROWSER
+  ? {}
+  : { 'User-Agent': BOT_AGENT, 'Api-User-Agent': BOT_AGENT };
 
 function sleep(ms, signal) {
   return new Promise((resolve) => {

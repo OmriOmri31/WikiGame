@@ -61,7 +61,88 @@ export function titleFromHref(href) {
   return { kind: 'article', title, hash: url.hash || '' };
 }
 
-export async function fetchArticle(title) {
+// One article request may take at most this long before it is retried, so a stalled
+// connection on a phone never leaves the game waiting forever.
+export const ARTICLE_TIMEOUT_MS = 10000;
+const ARTICLE_RETRY_DELAY_MS = 800;
+const ARTICLE_MAX_RETRY_WAIT_MS = 5000;
+
+function waitFor(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+function articleError(code, message = code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+// Retry-After is seconds (or an HTTP date). Wait at most a few seconds before the one retry.
+function retryDelay(response) {
+  const header = response?.headers?.get?.('retry-after');
+  let ms = ARTICLE_RETRY_DELAY_MS;
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) ms = seconds * 1000;
+    else {
+      const at = Date.parse(header);
+      if (Number.isFinite(at)) ms = at - Date.now();
+    }
+  }
+  return Math.min(ARTICLE_MAX_RETRY_WAIT_MS, Math.max(ARTICLE_RETRY_DELAY_MS, ms));
+}
+
+async function fetchArticleOnce(endpoint, { fetchImpl, timeoutMs }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let response;
+    try {
+      response = await fetchImpl(endpoint, { signal: controller.signal });
+    } catch (error) {
+      throw articleError(controller.signal.aborted ? 'timeout' : 'network', error?.message);
+    }
+    if (!response.ok) {
+      const error = articleError('network', `status ${response.status}`);
+      error.status = response.status;
+      error.retryAfterMs = retryDelay(response);
+      throw error;
+    }
+    let data;
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw articleError(controller.signal.aborted ? 'timeout' : 'network', error?.message);
+    }
+    if (data.error || !data.parse?.text?.['*']) {
+      throw articleError(data.error?.code || 'missing', data.error?.info || 'missing');
+    }
+    return {
+      title: data.parse.title,
+      html: data.parse.text['*'],
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function retryable(error) {
+  if (error.code === 'timeout') return true;
+  if (error.code !== 'network') return false;
+  // A missing status means the request itself failed (offline, reset, refused by CORS).
+  return !error.status || error.status === 429 || error.status >= 500;
+}
+
+// Loads one article. Each try has its own time limit; a failed or stalled try is retried once
+// (after the wait Wikipedia asks for, when it sends one). Always settles, so callers can rely on
+// their finally blocks.
+export async function fetchArticle(title, options = {}) {
+  const {
+    fetchImpl = (...args) => fetch(...args),
+    timeoutMs = ARTICLE_TIMEOUT_MS,
+    retries = 1,
+    sleep = waitFor,
+  } = options;
   const endpoint = new URL(API);
   endpoint.searchParams.set('action', 'parse');
   endpoint.searchParams.set('page', normalizeTitle(title));
@@ -71,22 +152,14 @@ export async function fetchArticle(title) {
   endpoint.searchParams.set('redirects', '1');
   endpoint.searchParams.set('disableeditsection', '1');
 
-  const response = await fetch(endpoint);
-  if (!response.ok) {
-    throw new Error('network');
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fetchArticleOnce(endpoint, { fetchImpl, timeoutMs });
+    } catch (error) {
+      if (attempt >= retries || !retryable(error)) throw error;
+      await sleep(error.retryAfterMs || ARTICLE_RETRY_DELAY_MS);
+    }
   }
-
-  const data = await response.json();
-  if (data.error || !data.parse?.text?.['*']) {
-    const error = new Error(data.error?.info || 'missing');
-    error.code = data.error?.code || 'missing';
-    throw error;
-  }
-
-  return {
-    title: data.parse.title,
-    html: data.parse.text['*'],
-  };
 }
 
 function absolutize(value) {
