@@ -439,13 +439,27 @@ export async function drawDistinctPair(taken, date = new Date(), blockedTitles) 
   return pickUnusedPair(pool, taken, blockedTitles);
 }
 
+// A "main page" start becomes one of the day's most-read pages. The answer is kept per day and
+// goal, so the home screen's background load and the game itself ask Wikimedia only once.
+const startPicks = new Map();
+
 export async function resolveStartTitle(storedStart, targetTitle, date = new Date()) {
   const start = normalizeTitle(storedStart);
   const target = normalizeTitle(targetTitle);
   if (!isMainPageTitle(start)) return start;
 
-  const pool = await fetchPopularTitles(target, date);
-  const picked = pickFromPool(pool, israelDateKey(date));
-  if (!picked) throw new Error('pageviews');
-  return picked;
+  const key = `${israelDateKey(date)}|${target}`;
+  if (!startPicks.has(key)) {
+    const pick = (async () => {
+      const pool = await fetchPopularTitles(target, date);
+      const picked = pickFromPool(pool, israelDateKey(date));
+      if (!picked) throw new Error('pageviews');
+      return picked;
+    })();
+    startPicks.set(key, pick);
+    pick.catch(() => {
+      if (startPicks.get(key) === pick) startPicks.delete(key);
+    });
+  }
+  return startPicks.get(key);
 }

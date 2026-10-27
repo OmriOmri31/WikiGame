@@ -1,10 +1,11 @@
 /* global __WIKIGAME_TEST__ */
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
 import { accountName } from '../account';
 import { rememberGuestResult } from '../guestClaim';
 import { db } from '../firebase';
 import { readDailyDoc, rememberDailyPair, seenDailyPair } from '../dailyDoc';
+import { peekArticle, preparedHtml, sharedArticle } from '../articleCache';
 import { saveLocalScore } from '../localScores';
 import { saveDailyScore, saveLocalDaily } from '../dailyScore';
 import { pageTitle } from '../testSite';
@@ -12,15 +13,12 @@ import { exitFullscreen } from '../fullscreen';
 import { clearGameSession, saveGameSession } from '../gameSession';
 import GameMenu from '../GameMenu';
 import GameTools, { FindBar } from '../GameTools';
-import { guardText, onGuardedCopy } from '../findGuard';
 import { clearPageFind, collectPageMatches, paintPageFind, scrollMatchIntoView } from '../pageFind';
 import Sheet from '../Sheet';
 import { fastestPathNow, publishFastestPath, stopFastestSearches } from '../fastestSearch';
 import { formatDuration } from '../time';
 import { liveDailyPair } from '../dailyPair';
-import { WIKIPEDIA_LICENSE_URL } from '../legal';
 import {
-  articleUrl,
   fetchArticle,
   israelDateKey,
   normalizeTitle,
@@ -59,16 +57,6 @@ function loadErrorMessage(mode, pair) {
   return 'לא ניתן לטעון את המאמרים היומיים.';
 }
 
-function WikiAttribution({ title }) {
-  return (
-    <p className="wiki-attribution">
-      <a href={articleUrl(title)} target="_blank" rel="noopener noreferrer">הערך בוויקיפדיה</a>
-      {' · '}תוכן מוויקיפדיה העברית, ברישיון{' '}
-      <a href={WIKIPEDIA_LICENSE_URL} target="_blank" rel="noopener noreferrer" dir="ltr">CC BY-SA 4.0</a>
-    </p>
-  );
-}
-
 export default function GameScreen({ user, mode = 'daily', pair = null, resume = null, onFinish, onExit }) {
   const [startTitle, setStartTitle] = useState('');
   const [goalTitle, setGoalTitle] = useState('');
@@ -91,7 +79,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const [congratsOpen, setCongratsOpen] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [backUses, setBackUses] = useState(3);
-  const [searchTitle, setSearchTitle] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [findIndex, setFindIndex] = useState(0);
@@ -120,7 +107,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const articleRef = useRef(null);
   const cacheRef = useRef(new Map());
   const backUsesRef = useRef(3);
-  const searchTitleRef = useRef(null);
   const searchOpenRef = useRef(false);
   const rangesRef = useRef([]);
   const findIndexRef = useRef(0);
@@ -220,28 +206,24 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     toastTimerRef.current = window.setTimeout(() => setToast(''), 3200);
   }
 
-  function closeSearchIfOtherPage(title) {
-    if (!searchTitleRef.current || sameTitle(searchTitleRef.current, title)) return;
+  // A new page starts with the find bar closed, so loading an article never runs a search.
+  function closeSearchOnNewPage() {
+    if (!searchOpenRef.current) return;
     searchOpenRef.current = false;
     setSearchOpen(false);
+    setFindQuery('');
   }
 
   function openSearch() {
     if (finishedRef.current) return;
     const here = currentTitleRef.current;
     if (!here) return;
-    if (searchTitleRef.current && !sameTitle(searchTitleRef.current, here)) return;
-    if (!searchTitleRef.current) {
-      searchTitleRef.current = here;
-      setSearchTitle(here);
-    }
     searchOpenRef.current = true;
     setSearchOpen(true);
     setGoalOpen(false);
   }
 
   function toggleSearch() {
-    if (searchTitleRef.current && !sameTitle(searchTitleRef.current, currentTitleRef.current)) return;
     if (searchOpenRef.current) {
       searchOpenRef.current = false;
       setSearchOpen(false);
@@ -262,7 +244,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     const next = (findIndexRef.current + delta + ranges.length) % ranges.length;
     findIndexRef.current = next;
     setFindIndex(next);
-    paintPageFind(ranges, next);
+    paintPageFind(ranges, next, scrollRef.current);
     scrollMatchIntoView(ranges[next], scrollRef.current);
   }
 
@@ -281,7 +263,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     pendingHashRef.current = '';
     setArticle(entry.article);
     setArticleHtml(entry.html);
-    closeSearchIfOtherPage(entry.article.title);
+    closeSearchOnNewPage();
     persistSession();
   }
 
@@ -371,7 +353,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       const startEarly = (title) => {
         const key = normalizeTitle(title);
         if (!key || early.has(key)) return;
-        const request = fetchArticle(key);
+        const request = sharedArticle(key);
         request.catch(() => {});
         early.set(key, request);
       };
@@ -385,7 +367,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       }
       if (resumeRef.current?.currentTitle) startEarly(resumeRef.current.currentTitle);
       const loadArticle = async (title) => {
-        const request = early.get(normalizeTitle(title));
+        // The home screen may already have loaded today's articles (dailyStart.js).
+        const request = early.get(normalizeTitle(title)) || peekArticle(title);
         if (request) {
           try {
             return await request;
@@ -410,8 +393,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
           chosen = await chooseTitles();
           }
         const [startHtml, targetHtml] = await Promise.all([
-          prepareArticleHtml(startArticle.html),
-          prepareArticleHtml(targetArticle.html),
+          preparedHtml(startArticle),
+          preparedHtml(targetArticle),
         ]);
         if (cancelled) return;
 
@@ -530,14 +513,9 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     return undefined;
   }, [article]);
 
-  // Make the browser's own find-in-page unable to match article words.
-  useLayoutEffect(() => {
-    guardText(articleRef.current);
-  }, [articleHtml, article?.title]);
-
   useEffect(() => {
     const root = articleRef.current;
-    clearPageFind(root);
+    clearPageFind();
     rangesRef.current = [];
     if (!searchOpen || !findQuery.trim() || !root) {
       findIndexRef.current = 0;
@@ -552,9 +530,9 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     setFindIndex(0);
     setFindCount(ranges.length);
     setFindCapped(capped);
-    paintPageFind(ranges, 0);
+    paintPageFind(ranges, 0, scrollRef.current);
     if (ranges[0]) scrollMatchIntoView(ranges[0], scrollRef.current);
-    return () => clearPageFind(root);
+    return () => clearPageFind();
   }, [searchOpen, findQuery, articleHtml]);
 
   useEffect(() => {
@@ -582,12 +560,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat || !currentTitleRef.current) return;
-      const locked = searchTitleRef.current
-        && !sameTitle(searchTitleRef.current, currentTitleRef.current);
-      if (locked) {
-        showToast('החיפוש זמין רק בדף אחד במשחק.');
-        return;
-      }
       if (searchOpenRef.current) {
         const input = document.getElementById('page-find-input');
         input?.focus();
@@ -750,8 +722,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     setToast('');
     backUsesRef.current = 3;
     setBackUses(3);
-    searchTitleRef.current = null;
-    setSearchTitle(null);
     searchOpenRef.current = false;
     setSearchOpen(false);
     setFindQuery('');
@@ -760,7 +730,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     setFindCount(0);
     setFindCapped(false);
     rangesRef.current = [];
-    clearPageFind(articleRef.current);
+    clearPageFind();
     setLoading(true);
     scrollRef.current?.scrollTo(0, 0);
     setAttempt((value) => value + 1);
@@ -827,7 +797,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       pendingHashRef.current = hash;
       setArticle(next);
       setArticleHtml(html);
-      closeSearchIfOtherPage(next.title);
+      closeSearchOnNewPage();
 
       if (sameTitle(next.title, goalTitleRef.current)) {
         await completeGame(count);
@@ -909,7 +879,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
           backDisabled={pages < 2 || backUses < 1 || loading}
           onFirstPage={pages < 2}
           onBack={goBack}
-          searchDisabled={Boolean(searchTitle && !sameTitle(searchTitle, article.title))}
           searchOpen={searchOpen}
           onToggleSearch={toggleSearch}
         />
@@ -950,7 +919,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         <article
           className={`article-inner mw-parser-output${loading ? ' is-loading' : ''}`}
           ref={articleRef}
-          onCopy={onGuardedCopy}
         >
           <h1>{article.title}</h1>
           <div
@@ -958,7 +926,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
             onClick={(event) => followLink(event, false)}
             dangerouslySetInnerHTML={{ __html: articleHtml }}
           />
-          {article.title && !loading ? <WikiAttribution title={article.title} /> : null}
         </article>
       </div>
 
@@ -987,7 +954,6 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
               onClick={(event) => followLink(event, true)}
               dangerouslySetInnerHTML={{ __html: goalHtml }}
             />
-            <WikiAttribution title={goalArticle.title} />
           </article>
         </Sheet>
       ) : null}

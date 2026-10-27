@@ -1,11 +1,30 @@
-import { GUARD } from './findGuard';
-
+// In-game find in page. It never changes the article: matches are found as DOM Ranges over the
+// existing text and painted with the CSS Custom Highlight API. Browsers without it (iPhones before
+// iOS 17.2) get one box drawn over the current match, outside the article. Nothing here runs when
+// an article loads; it runs only while the player types in the find bar or steps between matches.
 const FIND_ALL = 'page-find';
 const FIND_CURRENT = 'page-find-current';
-const MATCH_LIMIT = 300;
+export const MATCH_LIMIT = 300;
+
+let spot = null;
 
 function highlightsAvailable() {
-  return typeof Highlight !== 'undefined' && typeof CSS !== 'undefined' && CSS.highlights;
+  return typeof Highlight !== 'undefined' && typeof CSS !== 'undefined' && Boolean(CSS.highlights);
+}
+
+// Start offsets of `needle` in `hay` (both already lower-cased), without overlaps, at most `limit`.
+export function matchOffsets(hay, needle, limit = MATCH_LIMIT) {
+  const found = [];
+  if (!needle || limit < 1) return found;
+  let from = 0;
+  while (from <= hay.length - needle.length) {
+    const index = hay.indexOf(needle, from);
+    if (index < 0) break;
+    found.push(index);
+    if (found.length >= limit) break;
+    from = index + needle.length;
+  }
+  return found;
 }
 
 function acceptText(node) {
@@ -18,19 +37,17 @@ function acceptText(node) {
   return NodeFilter.FILTER_ACCEPT;
 }
 
-export function clearPageFind(root) {
+function removeSpot() {
+  if (spot) spot.remove();
+  spot = null;
+}
+
+export function clearPageFind() {
   if (highlightsAvailable()) {
     CSS.highlights.delete(FIND_ALL);
     CSS.highlights.delete(FIND_CURRENT);
   }
-  if (!root) return;
-  root.querySelectorAll('mark.page-find').forEach((mark) => {
-    const parent = mark.parentNode;
-    if (!parent) return;
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-    parent.removeChild(mark);
-    parent.normalize();
-  });
+  removeSpot();
 }
 
 export function collectPageMatches(root, query) {
@@ -39,86 +56,53 @@ export function collectPageMatches(root, query) {
   if (!root || !needle) return { ranges, capped: false };
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: acceptText });
-  let capped = false;
-  let node = walker.nextNode();
-  while (node) {
-    const raw = node.nodeValue;
-    // Search the text without the find-guard characters, then map the hit
-    // back to offsets in the real text node.
-    let hay = raw;
-    let map = null;
-    if (raw.indexOf(GUARD) >= 0) {
-      map = [];
-      let clean = '';
-      for (let i = 0; i < raw.length; i += 1) {
-        if (raw[i] === GUARD) continue;
-        map.push(i);
-        clean += raw[i];
-      }
-      map.push(raw.length);
-      hay = clean;
-    }
-    hay = hay.toLowerCase();
-    let from = 0;
-    while (from < hay.length) {
-      const index = hay.indexOf(needle, from);
-      if (index < 0) break;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const offsets = matchOffsets(node.nodeValue.toLowerCase(), needle, MATCH_LIMIT - ranges.length);
+    for (const index of offsets) {
       const range = new Range();
-      range.setStart(node, map ? map[index] : index);
-      range.setEnd(node, map ? map[index + needle.length - 1] + 1 : index + needle.length);
+      range.setStart(node, index);
+      range.setEnd(node, index + needle.length);
       ranges.push(range);
-      if (ranges.length >= MATCH_LIMIT) {
-        capped = true;
-        return { ranges, capped };
-      }
-      from = index + needle.length;
     }
-    node = walker.nextNode();
+    if (ranges.length >= MATCH_LIMIT) return { ranges, capped: true };
   }
-  return { ranges, capped };
+  return { ranges, capped: false };
 }
 
 function paintWithHighlights(ranges, index) {
-  CSS.highlights.delete(FIND_ALL);
-  CSS.highlights.delete(FIND_CURRENT);
-  if (!ranges.length) return;
-  const current = ranges[index] || ranges[0];
   const rest = new Highlight();
   ranges.forEach((range, rangeIndex) => {
     if (rangeIndex !== index) rest.add(range);
   });
   CSS.highlights.set(FIND_ALL, rest);
-  CSS.highlights.set(FIND_CURRENT, new Highlight(current));
+  CSS.highlights.set(FIND_CURRENT, new Highlight(ranges[index]));
 }
 
-function paintWithMarks(ranges, index) {
-  const existing = document.querySelectorAll('mark.page-find');
-  if (existing.length === ranges.length && existing.length > 0) {
-    existing.forEach((mark, markIndex) => {
-      mark.classList.toggle('is-current', markIndex === index);
-    });
+function paintWithSpot(range, scroller) {
+  if (!scroller) return;
+  const rect = range.getClientRects()[0] || range.getBoundingClientRect();
+  if (!rect || (rect.width === 0 && rect.height === 0)) {
+    removeSpot();
     return;
   }
-  const ordered = ranges
-    .map((range, rangeIndex) => ({ range, rangeIndex }))
-    .sort((a, b) => b.range.compareBoundaryPoints(Range.START_TO_START, a.range));
-  ordered.forEach(({ range, rangeIndex }) => {
-    const mark = document.createElement('mark');
-    mark.className = `page-find${rangeIndex === index ? ' is-current' : ''}`;
-    try {
-      range.surroundContents(mark);
-    } catch {
-      // A range that is not a single text span cannot be wrapped.
-    }
-  });
+  const box = scroller.getBoundingClientRect();
+  if (!spot || spot.parentNode !== scroller) {
+    removeSpot();
+    spot = document.createElement('div');
+    spot.className = 'find-spot';
+    spot.setAttribute('aria-hidden', 'true');
+    scroller.appendChild(spot);
+  }
+  spot.style.top = `${rect.top - box.top + scroller.scrollTop}px`;
+  spot.style.left = `${rect.left - box.left + scroller.scrollLeft}px`;
+  spot.style.width = `${rect.width}px`;
+  spot.style.height = `${rect.height}px`;
 }
 
-export function paintPageFind(ranges, index) {
+// `scroller` is the element that scrolls the article; the fallback box is placed inside it.
+export function paintPageFind(ranges, index, scroller) {
   if (!ranges.length) {
-    if (highlightsAvailable()) {
-      CSS.highlights.delete(FIND_ALL);
-      CSS.highlights.delete(FIND_CURRENT);
-    }
+    clearPageFind();
     return;
   }
   const current = Math.min(Math.max(index, 0), ranges.length - 1);
@@ -126,7 +110,7 @@ export function paintPageFind(ranges, index) {
     paintWithHighlights(ranges, current);
     return;
   }
-  paintWithMarks(ranges, current);
+  paintWithSpot(ranges[current], scroller);
 }
 
 export function scrollMatchIntoView(range, scroller) {
