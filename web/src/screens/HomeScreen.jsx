@@ -22,6 +22,7 @@ import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
 import { rowDayKey } from '../dailyScore';
 import { israelDateKey } from '../wikipedia';
+import { prefetchDailyDoc } from '../dailyDoc';
 import Stage from '../Stage';
 import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen } from './IntroAlert';
 import Tutorial from './Tutorial';
@@ -87,6 +88,11 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   }, []);
   const closeTutorial = useCallback(() => {
     setTutorialOpen(false);
+  }, []);
+
+  // Start reading today's daily document now, so the daily game opens without waiting for it.
+  useEffect(() => {
+    prefetchDailyDoc();
   }, []);
 
   useEffect(() => {
