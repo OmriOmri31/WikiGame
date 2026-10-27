@@ -113,11 +113,17 @@ export default defineConfig(({ mode }) => {
     process.env.GEMINI_API_KEY = env.GEMINI_API_KEY;
   }
   const testSite = (process.env.WIKIGAME_ENV || env.WIKIGAME_ENV) === 'test';
+  // End-to-end test build (e2e/): Firebase on the local emulators. Never on Netlify.
+  const e2e = process.env.WIKIGAME_E2E === '1';
+  if (e2e && (process.env.NETLIFY || testSite)) {
+    throw new Error('WIKIGAME_E2E builds are for local tests and CI only');
+  }
   return {
     plugins: [react(), geminiDev(), testSiteBranding(testSite)],
     // Test-only code sits behind this constant, so production builds drop it entirely.
     // The test admin uid is read only for test builds; a production build always gets ''.
     define: {
+      __WIKIGAME_E2E__: JSON.stringify(e2e),
       __WIKIGAME_TEST__: JSON.stringify(testSite),
       __WIKIGAME_TEST_ADMIN__: JSON.stringify(testSite
         ? (process.env.WIKIGAME_TEST_ADMIN_UID || env.WIKIGAME_TEST_ADMIN_UID || '')

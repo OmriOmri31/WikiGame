@@ -1,0 +1,235 @@
+name: CI
+
+# Runs on every pull request into test or main and on every push to them, whoever wrote the
+# code. Branch protection requires the "CI passed" check, so one failing test blocks the merge.
+# No secrets are used: Firebase runs on local emulators and Wikipedia is mocked.
+on:
+  pull_request:
+    branches: [test, main]
+  push:
+    branches: [test, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '22.20.0' # same as netlify.toml
+  FORCE_COLOR: '1'
+
+jobs:
+  unit:
+    name: Unit tests (web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm test
+        working-directory: web
+
+  rules:
+    name: Firestore rules tests (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: rules-tests/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-rules-${{ hashFiles('rules-tests/package-lock.json') }}
+      - run: npm ci
+        working-directory: rules-tests
+      - name: Run the rules tests
+        working-directory: rules-tests
+        run: |
+          npm test 2>&1 | tee rules-output.txt
+          # Guard against tests silently disappearing: at least 168 must run and none may fail.
+          total=$(grep -oE 'Total: [0-9]+ passed, [0-9]+ failed' rules-output.txt | tail -1)
+          passed=$(echo "$total" | grep -oE '[0-9]+' | head -1)
+          failed=$(echo "$total" | grep -oE '[0-9]+' | tail -1)
+          echo "Rules tests: ${passed:-0} passed, ${failed:-?} failed"
+          [ -n "$total" ] && [ "$failed" = 0 ] && [ "$passed" -ge 168 ]
+
+  build:
+    name: Build, production guards, bundle size, audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+            rules-tests/package-lock.json
+      - name: Lockfiles match package.json
+        run: node scripts/ci/check-lockfiles.mjs
+      - run: npm ci
+        working-directory: web
+      - name: Production build (what Netlify builds)
+        run: npm run build
+        working-directory: web
+      - name: Production build has no test-only code, headers and CSP are right, size is in budget
+        run: node scripts/ci/check-build.mjs prod web/dist
+      - name: Test-site build with fake values carries the markers the check above looks for
+        working-directory: web
+        env:
+          WIKIGAME_ENV: test
+          WIKIGAME_SECRET_CODE: ci-fake-secret-code
+          WIKIGAME_TEST_ADMIN_UID: ci-fake-admin-uid
+          WIKIGAME_TEST_DESK_PATH: m-ci-fake-desk-path-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        run: |
+          npx vite build --outDir "$RUNNER_TEMP/dist-testsite" --emptyOutDir
+          node ../scripts/ci/check-build.mjs testsite "$RUNNER_TEMP/dist-testsite"
+      - name: No secrets or personal emails in the built site
+        run: node scripts/ci/check-secrets.mjs web/dist
+      - name: npm audit (high and critical)
+        run: |
+          node scripts/ci/audit.mjs web --omit=dev
+          node scripts/ci/audit.mjs e2e
+          node scripts/ci/audit.mjs rules-tests --report-only
+
+  secrets:
+    name: Secret scan and repo checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # gitleaks scans the whole history
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install gitleaks and actionlint (pinned, checksum verified)
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tgz" | sha256sum -c -
+          curl -sSfL -o actionlint.tgz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks && tar -xzf actionlint.tgz actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: gitleaks (whole git history)
+        run: gitleaks git --no-banner --redact -c .gitleaks.toml .
+      - name: No API keys, tokens, personal emails, .env files or desk paths in the repo
+        run: node scripts/ci/check-secrets.mjs
+      - name: Hebrew / right-to-left sanity
+        run: node scripts/ci/check-hebrew.mjs
+      - name: Workflow files are valid (actionlint)
+        run: actionlint -color
+
+  e2e:
+    name: E2E (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop, iphone]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+        working-directory: e2e
+      - name: Playwright version
+        id: pw
+        working-directory: e2e
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: browsers
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.pw.outputs.version }}-${{ matrix.project }}
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-e2e-${{ hashFiles('e2e/package-lock.json') }}
+      - name: Install the browser
+        working-directory: e2e
+        env:
+          BROWSER: ${{ matrix.project == 'iphone' && 'webkit' || 'chromium' }}
+        run: |
+          if [ "${{ steps.browsers.outputs.cache-hit }}" = true ]; then
+            npx playwright install-deps "$BROWSER"
+          else
+            npx playwright install --with-deps "$BROWSER"
+          fi
+      - name: Build the app for e2e (production build, Firebase on local emulators)
+        run: npm run build
+        working-directory: e2e
+      - name: Run the e2e tests
+        run: npm test -- --project=${{ matrix.project }}
+        working-directory: e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+  live-smoke:
+    name: Live read-only smoke (information only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # An outage at Google or Wikipedia must not block a merge, so this job is not required.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: node scripts/ci/live-smoke.mjs
+
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [unit, rules, build, secrets, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every required job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | node -e '
+            const needs = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const bad = Object.entries(needs).filter(([, job]) => job.result !== "success");
+            for (const [name, job] of Object.entries(needs)) console.log(`${name}: ${job.result}`);
+            if (bad.length) { console.error(`Failed: ${bad.map(([name]) => name).join(", ")}`); process.exit(1); }
+          '

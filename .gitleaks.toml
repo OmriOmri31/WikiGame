@@ -1,0 +1,16 @@
+# gitleaks config for CI (see TESTING.md). Default rules, plus two known non-secrets.
+title = "WikiGame gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The Firebase web config key is public by design (access is enforced by firestore.rules)"
+regexes = ['''^AIzaSyCKKmyF_NJsrH88s1bolUoGUhT9XowlXhQ$''']
+
+[[allowlists]]
+description = "Firebase Auth user ids in the rules are ids, not secrets"
+condition = "AND"
+paths = ['''^firestore\.rules$''']
+regexTarget = "line"
+regexes = ['''request\.auth\.uid ==''']
