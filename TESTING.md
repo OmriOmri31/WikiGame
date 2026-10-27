@@ -46,7 +46,7 @@ cd web && WIKIGAME_ENV=test WIKIGAME_SECRET_CODE=ci-fake-secret-code \
 node scripts/ci/check-build.mjs testsite /tmp/dist-testsite
 
 # End-to-end (Playwright with the Firestore and Auth emulators)
-cd e2e && npm ci && npx playwright install chromium webkit
+cd e2e && npm ci && npx playwright install --with-deps chromium webkit
 npm run build                      # production build wired to the local emulators, in web/dist-e2e
 npm test                           # both desktop and iphone
 npm test -- --project=desktop      # one project
@@ -65,6 +65,10 @@ SECRET_CODE_FILE=/path/to/secret-code.txt node scripts/ci/check-secrets.mjs web/
 ```
 
 The script reads the file, compares in memory and never prints the code.
+
+In CI the e2e jobs run inside Playwright's official image (`mcr.microsoft.com/playwright`), which
+already has the browsers. When you upgrade `@playwright/test` in `e2e/`, update the image tag in `ci.yml` too.
+CI fails with a reminder if the two don't match.
 
 ## How the e2e tests stay safe
 

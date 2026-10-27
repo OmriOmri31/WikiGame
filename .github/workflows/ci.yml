@@ -144,6 +144,11 @@ jobs:
     name: E2E (${{ matrix.project }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Playwright's official image already has the browsers and their system libraries, so no
+    # slow apt install on every run. Keep the tag equal to @playwright/test in e2e/package-lock.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -165,29 +170,16 @@ jobs:
         working-directory: web
       - run: npm ci
         working-directory: e2e
-      - name: Playwright version
-        id: pw
+      - name: The Playwright image matches the installed Playwright
         working-directory: e2e
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
-        id: browsers
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ steps.pw.outputs.version }}-${{ matrix.project }}
+        run: |
+          version=$(node -p "require('@playwright/test/package.json').version")
+          echo "Playwright $version"
+          [ "$version" = "1.64.1" ] || { echo "Update the container image tag in ci.yml to v$version"; exit 1; }
       - uses: actions/cache@v6
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-e2e-${{ hashFiles('e2e/package-lock.json') }}
-      - name: Install the browser
-        working-directory: e2e
-        env:
-          BROWSER: ${{ matrix.project == 'iphone' && 'webkit' || 'chromium' }}
-        run: |
-          if [ "${{ steps.browsers.outputs.cache-hit }}" = true ]; then
-            npx playwright install-deps "$BROWSER"
-          else
-            npx playwright install --with-deps "$BROWSER"
-          fi
       - name: Build the app for e2e (production build, Firebase on local emulators)
         run: npm run build
         working-directory: e2e
