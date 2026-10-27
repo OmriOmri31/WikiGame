@@ -224,8 +224,6 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v7
-        with:
-          sparse-checkout: scripts/ci
       - name: Every required job succeeded
         env:
           RESULTS: ${{ toJSON(needs) }}
