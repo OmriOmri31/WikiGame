@@ -1,5 +1,5 @@
 import {
-  test, expect, openHome, articleLink, waitForArticle, guarded, startDaily, openMenu, openFreeBoard, pagesStat,
+  test, expect, openHome, articleLink, waitForArticle, titled, startDaily, openMenu, openFreeBoard, pagesStat,
 } from '../fixtures.mjs';
 import { DAILY, FREE_POOL } from '../wiki-mock.mjs';
 
@@ -37,29 +37,108 @@ test.describe('daily game (guest, no sign-in)', () => {
 
   test('hash, outside and special links stay on the page', async ({ page }) => {
     await startDaily(page);
-    await page.locator('.article-scroll .article-body').getByRole('link', { name: guarded('אתר חיצוני') }).click();
+    await page.locator('.article-scroll .article-body').getByRole('link', { name: titled('אתר חיצוני') }).click();
     await expect(page.getByRole('status')).toHaveText('אפשר לנווט רק בין ערכי ויקיפדיה.');
-    await page.locator('.article-scroll .article-body').getByRole('link', { name: guarded('ערך אקראי') }).click();
+    await page.locator('.article-scroll .article-body').getByRole('link', { name: titled('ערך אקראי') }).click();
     await waitForArticle(page, DAILY.start);
-    await page.locator('.article-scroll .article-body').getByRole('link', { name: guarded('קישורים') }).click();
+    await page.locator('.article-scroll .article-body').getByRole('link', { name: titled('קישורים') }).click();
     await waitForArticle(page, DAILY.start);
     await expect(pagesStat(page)).toContainText('1');
   });
 
   test('goal sheet opens, its links are read-only, and closes', async ({ page }) => {
     await startDaily(page);
-    await page.getByRole('button', { name: guarded(DAILY.goal) }).click();
+    await page.getByRole('button', { name: titled(DAILY.goal) }).click();
     await expect(page.getByText('זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.')).toBeVisible();
     await page.getByRole('button', { name: 'חזור למהלך המשחק' }).click();
     await expect(page.getByText('זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.')).toBeHidden();
   });
 
-  test('find in page highlights matches', async ({ page }) => {
+  test('find in page works on every page and never changes the article text', async ({ page }) => {
     await startDaily(page);
-    await page.getByRole('button', { name: 'חיפוש בדף', exact: true }).click();
-    await page.getByRole('searchbox').or(page.getByRole('textbox', { name: 'חיפוש בדף' })).first().fill('ישראל');
-    await expect(page.locator('.find-count, [aria-live]').filter({ hasText: /\d/ }).first()).toBeVisible();
+    const body = page.locator('.article-scroll .article-body');
+    const before = await body.innerHTML();
+    const search = page.getByRole('button', { name: 'חיפוש בדף', exact: true });
+    const box = page.locator('#page-find-input');
+    const count = page.locator('.find-count');
+
+    await search.click();
+    await box.fill('טקסט');
+    await expect(count).toHaveText('1/40');
+    await page.getByRole('button', { name: 'ההתאמה הבאה' }).click();
+    await expect(count).toHaveText('2/40');
+    // Matches are painted over the text (CSS highlights, or one box outside the article), so the
+    // article itself is exactly what Wikipedia sent: no <mark> wrappers, no hidden characters.
+    expect(await body.innerHTML()).toBe(before);
+    await expect(page.locator('.article-scroll mark')).toHaveCount(0);
+    expect(await body.evaluate((node) => node.textContent.includes('\uE000'))).toBe(false);
     await page.getByRole('button', { name: 'סגירת החיפוש' }).click();
+    await expect(box).toBeHidden();
+
+    // A new page: the find bar starts closed, and search is still available, as often as needed.
+    await articleLink(page, 'ישראל').click();
+    await waitForArticle(page, 'ישראל');
+    await expect(search).toBeEnabled();
+    await search.click();
+    await box.fill('למילוי');
+    await expect(count).toHaveText('1/40');
+    await articleLink(page, 'חיפה').click();
+    await waitForArticle(page, 'חיפה');
+    await expect(box).toBeHidden();
+    await search.click();
+    await box.fill('ישראל');
+    await expect(count).toHaveText('1/1');
+    await page.getByRole('button', { name: 'סגירת החיפוש' }).click();
+  });
+
+  test('find in page on a browser without CSS highlights (older iPhones) marks the match from outside the article', async ({ page }) => {
+    await page.addInitScript(() => { delete window.Highlight; });
+    await startDaily(page);
+    const body = page.locator('.article-scroll .article-body');
+    const before = await body.innerHTML();
+    await page.getByRole('button', { name: 'חיפוש בדף', exact: true }).click();
+    await page.locator('#page-find-input').fill('טקסט');
+    await expect(page.locator('.find-count')).toHaveText('1/40');
+    const spot = page.locator('.article-scroll > .find-spot');
+    await expect(spot).toHaveCount(1);
+    const first = await spot.boundingBox();
+    expect(first.width).toBeGreaterThan(0);
+    await page.getByRole('button', { name: 'ההתאמה הבאה' }).click();
+    await expect(page.locator('.find-count')).toHaveText('2/40');
+    await expect.poll(async () => JSON.stringify(await spot.boundingBox())).not.toBe(JSON.stringify(first));
+    expect(await body.innerHTML()).toBe(before);
+    await page.getByRole('button', { name: 'סגירת החיפוש' }).click();
+    await expect(spot).toHaveCount(0);
+  });
+
+  test('articles end without the Wikipedia line; the credits keep the license', async ({ page }) => {
+    await startDaily(page);
+    const article = page.locator('.article-scroll article');
+    await expect(article.getByText('הערך בוויקיפדיה')).toHaveCount(0);
+    await expect(article.getByText('CC BY-SA 4.0')).toHaveCount(0);
+    await expect(page.locator('.wiki-attribution')).toHaveCount(0);
+    await page.getByRole('button', { name: titled(DAILY.goal) }).click();
+    await expect(page.getByText('זהו דף המטרה. הקישורים כאן לא מובילים לשום מקום.')).toBeVisible();
+    await expect(page.getByText('הערך בוויקיפדיה')).toHaveCount(0);
+
+    await page.goto('/credits');
+    await expect(page.getByRole('link', { name: 'ויקיפדיה העברית' }).first()).toHaveAttribute('href', 'https://he.wikipedia.org/');
+    await expect(page.getByRole('link', { name: 'CC BY-SA 4.0' }).first()).toHaveAttribute('href', /creativecommons\.org\/licenses\/by-sa\/4\.0/);
+  });
+
+  test('the home screen loads today\'s articles in the background, once, without starting the game', async ({ page, wikiState }) => {
+    await openHome(page);
+    // Both daily articles are requested while the player is still on the home screen...
+    await expect.poll(() => wikiState.log.slice().sort()).toEqual([DAILY.start, DAILY.goal].sort());
+    // ...but nothing is shown or started: no article, no clock, no saved game.
+    await expect(page.locator('.article-scroll')).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('wikigame.session'))).toBeNull();
+
+    await page.getByRole('button', { name: 'משחק יומי' }).click();
+    await waitForArticle(page, DAILY.start);
+    // The game reused those requests instead of asking Wikipedia again.
+    expect(wikiState.log.filter((title) => title === DAILY.start)).toHaveLength(1);
+    expect(wikiState.log.filter((title) => title === DAILY.goal)).toHaveLength(1);
   });
 
   test('menu: theme, restart and give up', async ({ page }) => {
@@ -103,7 +182,7 @@ test.describe('free game', () => {
     await page.getByRole('button', { name: 'משחק חופשי' }).click();
     const start = page.locator('.route-title');
     await expect(start).toHaveText(/\S/);
-    const startTitle = (await start.textContent()).replace(/\uE000/g, '').trim();
+    const startTitle = (await start.textContent()).trim();
     expect(FREE_POOL).toContain(startTitle);
     const goal = FREE_POOL.find((title) => title !== startTitle);
     await waitForArticle(page, startTitle);
@@ -121,7 +200,7 @@ test.describe('free game', () => {
 
     await free.getByRole('button', { name: 'שחק שוב' }).click();
     await waitForArticle(page, startTitle);
-    await expect(page.getByRole('button', { name: guarded(goal) })).toBeVisible();
+    await expect(page.getByRole('button', { name: titled(goal) })).toBeVisible();
   });
 
   test('give up saves the game to the free board', async ({ page }) => {

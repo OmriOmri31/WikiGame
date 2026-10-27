@@ -51,20 +51,19 @@ export async function openHome(page) {
   await expect(page.getByRole('button', { name: 'משחק יומי' })).toBeVisible();
 }
 
-// The game hides article text from the browser's own find-in-page by putting U+E000 between
-// letters (findGuard.js). This matches a title with or without those marks.
-export function guarded(title, { whole = true } = {}) {
-  const body = [...title].map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\uE000?');
+// Matches a title exactly (spaces around it allowed). The game shows article text as it is.
+export function titled(title, { whole = true } = {}) {
+  const body = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(whole ? `^\\s*${body}\\s*$` : body);
 }
 
 // Clicks an article link inside the playing article (not the goal sheet).
 export function articleLink(page, title) {
-  return page.locator('.article-scroll .article-body').getByRole('link', { name: guarded(title) });
+  return page.locator('.article-scroll .article-body').getByRole('link', { name: titled(title) });
 }
 
 export async function waitForArticle(page, title) {
-  await expect(page.locator('.article-scroll article h1')).toHaveText(guarded(title));
+  await expect(page.locator('.article-scroll article h1')).toHaveText(titled(title));
   await expect(page.getByRole('progressbar', { name: 'טוען ערך' })).toHaveCount(0);
 }
 
@@ -72,8 +71,8 @@ export async function startDaily(page) {
   await openHome(page);
   await page.getByRole('button', { name: 'משחק יומי' }).click();
   await waitForArticle(page, DAILY.start);
-  await expect(page.locator('.route-title')).toHaveText(guarded(DAILY.start));
-  await expect(page.getByRole('button', { name: guarded(DAILY.goal) })).toBeVisible();
+  await expect(page.locator('.route-title')).toHaveText(titled(DAILY.start));
+  await expect(page.getByRole('button', { name: titled(DAILY.goal) })).toBeVisible();
 }
 
 export async function openMenu(page) {

@@ -92,7 +92,6 @@ export default function GameTools({
   backDisabled,
   onFirstPage,
   onBack,
-  searchDisabled,
   searchOpen,
   onToggleSearch,
 }) {
@@ -111,8 +110,7 @@ export default function GameTools({
       <button
         className="menu-button search-tool"
         type="button"
-        disabled={searchDisabled}
-        aria-label={searchDisabled ? 'חיפוש בדף, זמין רק בדף אחד במשחק' : 'חיפוש בדף'}
+        aria-label="חיפוש בדף"
         aria-expanded={searchOpen}
         aria-controls="page-find"
         onClick={onToggleSearch}
