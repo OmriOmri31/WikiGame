@@ -223,13 +223,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci
       - name: Every required job succeeded
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: |
-          echo "$RESULTS" | node -e '
-            const needs = JSON.parse(require("fs").readFileSync(0, "utf8"));
-            const bad = Object.entries(needs).filter(([, job]) => job.result !== "success");
-            for (const [name, job] of Object.entries(needs)) console.log(`${name}: ${job.result}`);
-            if (bad.length) { console.error(`Failed: ${bad.map(([name]) => name).join(", ")}`); process.exit(1); }
-          '
+        run: echo "$RESULTS" | node scripts/ci/all-passed.mjs
