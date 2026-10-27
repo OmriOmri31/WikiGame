@@ -10,7 +10,7 @@ const MISSED_KEY = 'wikigame.fastestMissed';
 const PATH_LIMIT = 200;
 // The search runs in the player's browser after a free game ends, one request at a time, and
 // gives up after this long so it never weighs on the next game or on Wikipedia.
-export const SEARCH_TIME_LIMIT_MS = 30000;
+export const SEARCH_TIME_LIMIT_MS = 60000;
 
 const jobs = new Map();
 const listeners = new Set();
