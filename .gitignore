@@ -7,3 +7,10 @@ firebase-key.json
 *.log
 .netlify/
 !.env.example
+
+# Test output
+dist-e2e/
+test-results/
+playwright-report/
+blob-report/
+e2e/firestore.rules

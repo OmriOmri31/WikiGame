@@ -1,0 +1,7 @@
+[
+  {
+    "id": "GHSA-m9gg-hp2v-232j",
+    "package": "@grpc/grpc-js",
+    "reason": "gRPC server auth context bug. The Firebase web SDK only uses @grpc/grpc-js under Node; the browser build talks to Firestore over WebChannel and does not include it. Remove once firebase ships a fixed grpc-js."
+  }
+]
