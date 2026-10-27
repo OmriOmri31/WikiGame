@@ -6,13 +6,18 @@ import { normalizeTitle } from './wikipedia';
 
 const PENDING_KEY = 'wikigame.fastestPending';
 const PATH_KEY = 'wikigame.fastestPaths';
+const MISSED_KEY = 'wikigame.fastestMissed';
 const PATH_LIMIT = 200;
+// The search runs in the player's browser after a free game ends, one request at a time, and
+// gives up after this long so it never weighs on the next game or on Wikipedia.
+export const SEARCH_TIME_LIMIT_MS = 60000;
 
 const jobs = new Map();
 const listeners = new Set();
 
 let pending = [];
 let paths = {};
+let missed = [];
 
 function pairKey(start, goal) {
   const from = normalizeTitle(start);
@@ -77,6 +82,19 @@ function savePending() {
   writeJson(PENDING_KEY, pending);
 }
 
+function loadMissed() {
+  const parsed = readJson(MISSED_KEY, []);
+  return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id) : [];
+}
+
+// Results whose search ran out of time. Nothing is written to the score, so the row simply says
+// the route wasn't found in time instead of showing a wrong "no route".
+function rememberMissed(id) {
+  if (!id || missed.includes(id)) return;
+  missed = [...missed, id].slice(-PATH_LIMIT);
+  writeJson(MISSED_KEY, missed);
+}
+
 function rememberPath(id, path) {
   const next = { ...paths, [id]: path };
   const ids = Object.keys(next);
@@ -92,6 +110,7 @@ function rememberPath(id, path) {
 function snapshot() {
   return {
     pendingIds: pending.map((item) => item.id),
+    missedIds: missed.slice(),
     paths: { ...paths },
   };
 }
@@ -123,6 +142,13 @@ function writePath(entry, path) {
 
 function deliver(entry, path) {
   if (!pending.some((item) => item.id === entry.id)) return;
+  if (!Array.isArray(path)) {
+    pending = pending.filter((item) => item.id !== entry.id);
+    savePending();
+    rememberMissed(entry.id);
+    emit();
+    return;
+  }
   writePath(entry, path);
 }
 
@@ -140,34 +166,42 @@ export function beginFastestSearch(start, goal) {
   if (!key) return null;
   const existing = jobs.get(key);
   if (existing) return existing;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEARCH_TIME_LIMIT_MS);
   const job = {
     status: 'running',
     path: null,
+    controller,
   };
   jobs.set(key, job);
-  job.promise = findShortestPath(start, goal)
+  // A found route is a list of titles, and [] means there is no route within 25 pages.
+  // null means the search stopped (time limit, a new game, a network problem): unknown.
+  job.promise = findShortestPath(start, goal, { signal: controller.signal })
     .then((found) => (Array.isArray(found?.path) ? found.path : []))
     .catch((error) => {
-      console.error(error);
-      return [];
+      if (error?.code !== 'stopped') console.error(error);
+      return null;
     })
     .then((path) => {
+      clearTimeout(timer);
       job.status = 'done';
       job.path = path;
+      // A search that didn't finish can run again for a later game on the same pair.
+      if (path === null) {
+        jobs.forEach((value, name) => {
+          if (value === job) jobs.delete(name);
+        });
+      }
       return path;
     });
   return job;
 }
 
-// The picked titles and the canonical article titles share one search.
-export function adoptFastestSearch(fromStart, fromGoal, start, goal) {
-  const from = pairKey(fromStart, fromGoal);
-  const to = pairKey(start, goal);
-  if (!to) return null;
-  const job = jobs.get(to) || (from ? jobs.get(from) : null) || beginFastestSearch(start, goal);
-  if (from) jobs.set(from, job);
-  jobs.set(to, job);
-  return job;
+// Stops every search still running (a new game is starting, or the page is closing).
+export function stopFastestSearches() {
+  new Set(jobs.values()).forEach((job) => {
+    if (job.status === 'running') job.controller?.abort();
+  });
 }
 
 export function fastestPathNow(start, goal) {
@@ -198,6 +232,15 @@ export function subscribeFastestPaths(listener) {
 }
 
 pending = loadPending();
+missed = loadMissed();
+// Searches live only as long as the page. Results still waiting from an earlier visit can't
+// finish now, so they show as not found in time rather than searching forever.
+if (pending.length) {
+  pending.forEach((item) => rememberMissed(item.id));
+  pending = [];
+  savePending();
+}
+if (typeof window !== 'undefined') window.addEventListener('pagehide', stopFastestSearches);
 paths = loadPaths();
 pending.forEach((entry) => {
   watchJob(beginFastestSearch(entry.start, entry.goal), entry);

@@ -205,7 +205,7 @@ function DailyRow({ row, rank, highlighted, onShowPath, onReplay, allowReplay, a
   );
 }
 
-function FreePlayRow({ row, highlighted, searching, onShowPath, onShowFastest, onReplay, allowReplay, allowShare }) {
+function FreePlayRow({ row, highlighted, searching, missed, onShowPath, onShowFastest, onReplay, allowReplay, allowShare }) {
   return (
     <div
       id={`score-${row.id}`}
@@ -224,6 +224,9 @@ function FreePlayRow({ row, highlighted, searching, onShowPath, onShowFastest, o
       </p>
       {searching ? (
         <p className="status free-search" role="status">מחפשים את הדרך המהירה ביותר…</p>
+      ) : null}
+      {missed ? (
+        <p className="status free-search">לא הספקנו למצוא את הדרך המהירה ביותר.</p>
       ) : null}
       <ScoreActions
         row={row}
@@ -275,7 +278,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [freeShown, setFreeShown] = useState(FREE_PAGE);
   const [wonKeys, setWonKeys] = useState(() => new Set());
   const [pathView, setPathView] = useState(null);
-  const [fastestLive, setFastestLive] = useState({ pendingIds: [], paths: {} });
+  const [fastestLive, setFastestLive] = useState({ pendingIds: [], missedIds: [], paths: {} });
   const [hopNotes, setHopNotes] = useState(null);
   const pathDialogRef = useRef(null);
   const mineStripRef = useRef(null);
@@ -712,11 +715,14 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
                     const shown = Array.isArray(livePath) ? { ...row, fastestPath: livePath } : row;
                     const searching = !Array.isArray(shown.fastestPath)
                       && fastestLive.pendingIds.includes(row.id);
+                    const missed = !searching && !Array.isArray(shown.fastestPath)
+                      && fastestLive.missedIds.includes(row.id);
                     return (
                       <FreePlayRow
                         key={row.id}
                         row={shown}
                         searching={searching}
+                        missed={missed}
                         highlighted={highlightMode === 'free' && row.id === highlightId}
                         onShowPath={showPlayed}
                         onShowFastest={showFastest}
