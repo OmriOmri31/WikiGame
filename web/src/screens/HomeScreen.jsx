@@ -606,7 +606,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
         </section>
         <footer className="home-footer">
           <ConsentNote onOpenPage={onOpenPage} />
-          <InfoLinks onOpen={onOpenPage} className="footer-links" />
+          <InfoLinks onOpen={onOpenPage} className="footer-links" report />
           <p className="wiki-attribution">תוכן מוויקיפדיה העברית, ברישיון CC BY-SA 4.0</p>
         </footer>
       </main>
