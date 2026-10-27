@@ -98,6 +98,9 @@ If a change goes over a budget on purpose, raise the budget in the same pull req
 
 ## npm audit exceptions
 
-`scripts/ci/audit-allowlist.json` lists advisories that are allowed, each with a reason. Today it has one:
-the gRPC server advisory in `@grpc/grpc-js`, which Firebase uses only under Node. The build check fails if
-gRPC ever reaches the browser bundle. `rules-tests` is test tooling that never ships, so its audit only reports.
+`scripts/ci/audit-allowlist.json` can list advisories that are allowed, each with a reason. It is empty
+today. All three package folders (`web`, `e2e`, `rules-tests`) fail CI on any high or critical advisory.
+
+`@grpc/grpc-js` is pinned to a fixed version with npm `overrides` (in `web` and `rules-tests`), because
+the Firebase client SDK still asks for the old 1.9 line. The browser bundle has no gRPC client, and the build
+check fails if one ever appears there, so this does not change what players load.
