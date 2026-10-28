@@ -106,3 +106,55 @@ test('the CSP hash matches the inline theme script in index.html', () => {
   assert.ok(toml.includes(`'${hash}'`), `netlify.toml needs '${hash}'`);
   assert.ok(!toml.includes("'unsafe-inline'"));
 });
+
+// A category page (e.g. "קטגוריה:בוגרי ישיבת חברון כנסת ישראל") has no text of its own: the parsed
+// page is an empty parser-output div. Its pages and subcategories come from list=categorymembers.
+test('a category page gets its members as playable links', async () => {
+  const category = 'קטגוריה:בוגרי ישיבת חברון כנסת ישראל';
+  const emptyParse = '<div class="mw-content-rtl mw-parser-output" lang="he" dir="rtl">\n<!-- NewPP limit report -->\n</div>';
+  const urls = [];
+  const fetchImpl = async (url) => {
+    const params = new URL(url).searchParams;
+    urls.push(params);
+    if (params.get('action') === 'parse') {
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ parse: { title: category, text: { '*': emptyParse } } }) };
+    }
+    const first = !params.get('cmcontinue');
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => (first
+        ? {
+          continue: { cmcontinue: 'page|next', continue: '-||' },
+          query: {
+            categorymembers: [
+              { ns: 0, title: 'ישיבת חברון כנסת ישראל' },
+              { ns: 14, title: 'קטגוריה:ראשי ישיבת חברון' },
+              { ns: 6, title: 'קובץ:תמונה.jpg' },
+            ],
+          },
+        }
+        : { query: { categorymembers: [{ ns: 0, title: 'אברהם אבידן' }] } }),
+    };
+  };
+  const article = await fetchArticle(category, { fetchImpl });
+  assert.equal(article.title, category);
+  const members = urls.filter((params) => params.get('list') === 'categorymembers');
+  assert.equal(members.length, 2);
+  assert.equal(members[0].get('cmtitle'), category);
+  assert.equal(members[1].get('cmcontinue'), 'page|next');
+  assert.match(article.html, /<h2>קטגוריות משנה<\/h2>/);
+  assert.match(article.html, /<h2>דפים בקטגוריה &quot;בוגרי ישיבת חברון כנסת ישראל&quot;<\/h2>/);
+  const link = (title) => `href="/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}"`;
+  assert.ok(article.html.includes(link('ישיבת חברון כנסת ישראל')));
+  assert.ok(article.html.includes(link('אברהם אבידן')));
+  assert.ok(article.html.includes(`${link('קטגוריה:ראשי ישיבת חברון')} title="קטגוריה:ראשי ישיבת חברון">ראשי ישיבת חברון</a>`));
+  assert.ok(!article.html.includes('קובץ'));
+});
+
+test('an ordinary article does not ask for category members', async () => {
+  const urls = [];
+  await fetchArticle('ירושלים', { fetchImpl: async (url) => { urls.push(url); return ok(); } });
+  assert.equal(urls.length, 1);
+});

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { israelDateKey } from '../wikipedia.js';
+import { useBackCloses } from '../backGuard';
 
 const STORAGE_KEY = 'wikigame.introHide';
 // The Israel date (Asia/Jerusalem, like the daily game) on which the intro was last shown.
@@ -84,6 +85,9 @@ export default function IntroAlert({ open, rememberable, onDismiss }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onDismiss, rememberable, hideForever]);
+
+  // The device's back closes it, like "הבנתי".
+  useBackCloses(open, () => onDismiss(rememberable && hideForever));
 
   if (!open) return null;
 

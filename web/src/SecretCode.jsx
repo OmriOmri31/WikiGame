@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBackCloses } from './backGuard';
 
 // Test site only (loaded behind __WIKIGAME_TEST__): five taps on the game header within two
 // seconds of each other open a code prompt, and the right code jumps to the goal page.
@@ -9,6 +10,7 @@ export default function SecretCode({ targetRef, resetKey, onUnlock }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const taps = useRef({ count: 0, last: 0 });
+  useBackCloses(open, () => setOpen(false));
 
   useEffect(() => {
     setOpen(false);

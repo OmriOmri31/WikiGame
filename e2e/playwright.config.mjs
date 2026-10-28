@@ -24,6 +24,8 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'], permissions: ['clipboard-read', 'clipboard-write'] } },
     // iPhone size, touch and user agent. Runs in WebKit, the engine of every iPhone browser.
     { name: 'iphone', use: { ...devices['iPhone 13'] }, testIgnore: /performance|security/ },
+    // An Android phone in Chrome, for what only Android does: the device's back button.
+    { name: 'android', use: { ...devices['Pixel 7'] }, testMatch: /navigation/ },
   ],
   webServer: {
     command: `node serve.mjs ../web/dist-e2e ${PORT}`,

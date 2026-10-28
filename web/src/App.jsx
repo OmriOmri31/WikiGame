@@ -16,6 +16,9 @@ import { isTestAdmin, onTestDeskPage, pageTitle } from './testSite';
 import Stage from './Stage';
 import { skipIntroThisSession } from './screens/IntroAlert';
 import { INFO_PAGES, infoPageFromPath } from './legal';
+import {
+  EXIT_NOTICE, EXIT_NOTICE_MS, closeTopPopup, closeWatcherBack, hasOpenPopup, isGuardState, pushGuard, resetUrl,
+} from './backGuard';
 
 // The owner, or on the test site only, the test admin.
 function isAdmin(user) {
@@ -55,14 +58,18 @@ function Loading() {
 }
 
 export default function App() {
+  const [exitNotice, setExitNotice] = useState(false);
   return (
-    <Suspense fallback={<Loading />}>
-      <AppScreens />
-    </Suspense>
+    <>
+      <Suspense fallback={<Loading />}>
+        <AppScreens onExitNotice={setExitNotice} />
+      </Suspense>
+      {exitNotice ? <div className="toast" role="status">{EXIT_NOTICE}</div> : null}
+    </>
   );
 }
 
-function AppScreens() {
+function AppScreens({ onExitNotice }) {
   const [screen, setScreen] = useState(() => {
     if (deskPath()) {
       skipIntroThisSession();
@@ -88,6 +95,122 @@ function AppScreens() {
   const [match, setMatch] = useState(() => (
     deskPath() ? { mode: 'daily', pair: null, id: 0, resume: null } : resumedMatch(loadGameSession())
   ));
+
+  // Native back (Android back, browser back, iOS swipe), see backGuard.js. On Android a close
+  // watcher catches it; elsewhere an extra history entry (the guard) sits on top of the page, so a
+  // back press lands here instead of leaving the site. Back first closes an open popup. Back from
+  // scores, an info page, the desk or the tutorial goes home. Back on the home screen or in a game
+  // shows a notice and lets the next back leave the site. The desk opened straight from its address
+  // has no guard.
+  const guardEnabledRef = useRef(!deskPath());
+  const watcherModeRef = useRef(closeWatcherBack());
+  const guardedRef = useRef(false);
+  const watcherRef = useRef(null);
+  const exitTimerRef = useRef(0);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  const matchRef = useRef(match);
+  matchRef.current = match;
+  const handleBackRef = useRef(() => {});
+
+  const ensureGuard = useCallback(() => {
+    if (!guardEnabledRef.current) return;
+    if (watcherModeRef.current) {
+      if (watcherRef.current) return;
+      window.clearTimeout(exitTimerRef.current);
+      onExitNotice(false);
+      try {
+        const watcher = new window.CloseWatcher();
+        watcher.onclose = () => {
+          if (watcherRef.current !== watcher) return;
+          watcherRef.current = null;
+          handleBackRef.current();
+        };
+        watcherRef.current = watcher;
+      } catch (error) {
+        // No close watcher after all: fall back to the history guard.
+        console.error(error);
+        watcherModeRef.current = false;
+        ensureGuard();
+      }
+      return;
+    }
+    if (guardedRef.current) return;
+    window.clearTimeout(exitTimerRef.current);
+    onExitNotice(false);
+    pushGuard();
+    guardedRef.current = true;
+  }, [onExitNotice]);
+
+  useEffect(() => {
+    ensureGuard();
+  }, [screen, ensureGuard]);
+
+  useEffect(() => {
+    // Any touch or key after the notice puts the guard back, so a later back shows it again.
+    const onInput = () => ensureGuard();
+    const events = ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click'];
+    events.forEach((name) => window.addEventListener(name, onInput, true));
+    // With a close watcher, Escape (a keyboard on Android) reaches it too, and it closes the open
+    // popup. The popup's own Escape handler is skipped, so one press closes one thing.
+    const onEscape = (event) => {
+      if (event.key === 'Escape' && watcherModeRef.current && watcherRef.current && hasOpenPopup()) {
+        event.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener('keydown', onEscape, true);
+    return () => {
+      events.forEach((name) => window.removeEventListener(name, onInput, true));
+      window.removeEventListener('keydown', onEscape, true);
+      window.clearTimeout(exitTimerRef.current);
+      watcherRef.current?.destroy();
+      watcherRef.current = null;
+    };
+  }, [ensureGuard]);
+
+  // A back press the guard caught (the history guard is already gone, or the close watcher fired).
+  handleBackRef.current = () => {
+    // An open popup (the intro, the free game chooser, a sheet) closes, and the screen stays.
+    if (closeTopPopup()) {
+      ensureGuard();
+      return;
+    }
+    const current = screenRef.current;
+    const inTutorial = current === 'game' && matchRef.current.mode === 'tutorial';
+    const inPreview = current === 'game' && matchRef.current.mode === 'preview';
+    if (current === 'home' || (current === 'game' && !inTutorial && !inPreview)) {
+      // The game itself is saved on the device (gameSession.js), so leaving loses nothing.
+      if (infoPageFromPath() || deskPath()) window.history.replaceState(null, '', '/');
+      onExitNotice(true);
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = window.setTimeout(ensureGuard, EXIT_NOTICE_MS);
+      return;
+    }
+    if (watcherModeRef.current) {
+      // Pages that have their own history entries step back through them, as in the browser.
+      const state = window.history.state;
+      if ((current === 'info' && state?.infoDepth) || (current === 'admin' && state?.desk)) {
+        window.history.back();
+        return;
+      }
+    }
+    resetUrl();
+    let next = 'home';
+    if (current === 'info') next = infoReturnRef.current === 'game' && !loadGameSession() ? 'home' : infoReturnRef.current;
+    if (inPreview) next = 'admin';
+    if (next === current) next = 'home';
+    setScreen(next);
+    ensureGuard();
+  };
+
+  // Returns true when this back press was handled here (it went below the history guard).
+  const backBelowGuard = useCallback(() => {
+    if (!guardEnabledRef.current || watcherModeRef.current) return false;
+    if (!guardedRef.current || isGuardState(window.history.state)) return false;
+    guardedRef.current = false;
+    handleBackRef.current();
+    return true;
+  }, []);
 
   function beginGame(next) {
     clearGameSession();
@@ -122,6 +245,8 @@ function AppScreens() {
 
   useEffect(() => {
     const onPop = () => {
+      if (window.history.state?.wikiGuard) guardedRef.current = true;
+      if (backBelowGuard()) return;
       const page = infoPageFromPath();
       if (page) setInfoPage(page);
       setScreen((current) => {
@@ -134,15 +259,17 @@ function AppScreens() {
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, []);
+  }, [backBelowGuard]);
 
   function openDesk() {
+    ensureGuard();
     window.history.pushState({ desk: true }, '', '/admin');
     setScreen('admin');
   }
 
   function openInfo(page) {
     if (!INFO_PAGES[page]) return;
+    ensureGuard();
     const depth = screen === 'info' ? (window.history.state?.infoDepth || 0) + 1 : 1;
     if (screen !== 'info') infoReturnRef.current = screen === 'leaderboard' ? 'leaderboard' : 'home';
     window.history.pushState({ info: page, infoDepth: depth }, '', INFO_PAGES[page].path);
@@ -156,7 +283,7 @@ function AppScreens() {
       window.history.go(-depth);
       return;
     }
-    window.history.replaceState(null, '', '/');
+    resetUrl();
     const back = infoReturnRef.current;
     setScreen(back === 'game' && !loadGameSession() ? 'home' : back);
   }
@@ -166,7 +293,7 @@ function AppScreens() {
       window.history.back();
       return;
     }
-    window.history.replaceState(null, '', '/');
+    resetUrl();
     setScreen('home');
   }
 
@@ -185,7 +312,7 @@ function AppScreens() {
     if (!authReady || !user || isAdmin(user) || onTestDeskPage()) return;
     if (screen !== 'admin' && !deskPath()) return;
     if (!ADMIN_UID) console.warn('Set ADMIN_UID in web/src/admin.js to open the desk.');
-    window.history.replaceState(null, '', '/');
+    resetUrl();
     setScreen('home');
   }, [authReady, user, screen]);
 

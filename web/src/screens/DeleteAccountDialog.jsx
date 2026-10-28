@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { authErrorMessage } from '../account';
+import { useBackCloses } from '../backGuard';
 import { CONTACT_EMAIL } from '../legal';
 import {
   deleteAccount,
@@ -30,6 +31,7 @@ export default function DeleteAccountDialog({ user, onClose }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  useBackCloses(true, () => { if (!busy) onClose(); });
 
   useEffect(() => {
     const onKey = (event) => {

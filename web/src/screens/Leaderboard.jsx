@@ -19,6 +19,7 @@ import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wik
 import { israelMidnightMs, scoreDateKey } from '../dailyPair';
 import { shareResult } from '../share';
 import { FREE_KIND_NAMES } from '../freeKind';
+import { useBackCloses } from '../backGuard';
 
 const FREE_PAGE = 20;
 
@@ -282,6 +283,7 @@ export default function Leaderboard({ user, highlightId, highlightMode, onHome, 
   const [freeShown, setFreeShown] = useState(FREE_PAGE);
   const [wonKeys, setWonKeys] = useState(() => new Set());
   const [pathView, setPathView] = useState(null);
+  useBackCloses(Boolean(pathView), () => setPathView(null));
   const [fastestLive, setFastestLive] = useState({ pendingIds: [], missedIds: [], paths: {} });
   const [hopNotes, setHopNotes] = useState(null);
   const pathDialogRef = useRef(null);

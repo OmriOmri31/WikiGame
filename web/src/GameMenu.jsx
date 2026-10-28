@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { spring } from './spring';
 import { SunIcon, themeLabel, useTheme } from './ThemeButton';
 import { toggleTheme } from './theme';
+import { useBackCloses } from './backGuard';
 
 const OPEN_SCALE = 1;
 const CLOSED_SCALE = 0.86;
@@ -83,6 +84,9 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
   const theme = useTheme();
 
   if (open && !mounted) setMounted(true);
+  // The device's back closes the menu or the give-up question, and the game stays.
+  useBackCloses(open, () => closeMenu(true));
+  useBackCloses(giveUpOpen, () => cancelGiveUp());
 
   function closeMenu(restoreFocus) {
     setOpen(false);
@@ -239,7 +243,7 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
               <RestartIcon />
             </button>
             <button className="game-menu-item danger" type="button" role="menuitem" onClick={chooseGiveUp}>
-              <span>ויתור</span>
+              <span>חזרה לדף הבית</span>
               <FlagIcon />
             </button>
           </div>
@@ -256,17 +260,17 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
             aria-describedby="give-up-body"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 id="give-up-title">לוותר על המשחק?</h2>
+            <h2 id="give-up-title">לחזור לדף הבית?</h2>
             <p id="give-up-body" className="lede">
               {freePlay
-                ? 'המשחק נשמר בטבלה. הדרך המהירה ביותר תופיע שם ברגע שתימצא, ואפשר להמשיך למשחק אחר.'
-                : 'ההתקדמות בסיבוב הזה לא תישמר.'}
+                ? 'המשחק יסתיים ויישמר בטבלה. הדרך המהירה ביותר תופיע שם ברגע שתימצא, ואפשר להמשיך למשחק אחר.'
+                : 'המשחק יסתיים, וההתקדמות בסיבוב הזה לא תישמר.'}
             </p>
             <button className="primary" type="button" autoFocus onClick={cancelGiveUp}>
               המשך לשחק
             </button>
             <button className="secondary danger" type="button" onClick={confirmGiveUp}>
-              ויתור
+              חזרה לדף הבית
             </button>
           </div>
         </div>
