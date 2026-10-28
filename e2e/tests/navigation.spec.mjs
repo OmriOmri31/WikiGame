@@ -90,8 +90,8 @@ test.describe('native back', () => {
   test('a daily game given up: home, and back there shows the notice', async ({ page }) => {
     await startDaily(page);
     await openMenu(page);
-    await page.getByRole('menuitem', { name: /ויתור/ }).click();
-    await page.getByRole('alertdialog').getByRole('button', { name: 'ויתור' }).click();
+    await page.getByRole('menuitem', { name: 'חזרה לדף הבית' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'חזרה לדף הבית' }).click();
     await expectHomeNotice(page);
   });
 
@@ -100,8 +100,8 @@ test.describe('native back', () => {
     await startFree(page);
     await expect(page.locator('.article-scroll article h1')).toBeVisible();
     await openMenu(page);
-    await page.getByRole('menuitem', { name: /ויתור/ }).click();
-    await page.getByRole('alertdialog').getByRole('button', { name: 'ויתור' }).click();
+    await page.getByRole('menuitem', { name: 'חזרה לדף הבית' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'חזרה לדף הבית' }).click();
     await page.getByRole('button', { name: 'משחק חדש' }).click();
     await expectHomeNotice(page);
   });

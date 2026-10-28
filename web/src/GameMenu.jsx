@@ -243,7 +243,7 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
               <RestartIcon />
             </button>
             <button className="game-menu-item danger" type="button" role="menuitem" onClick={chooseGiveUp}>
-              <span>ויתור</span>
+              <span>חזרה לדף הבית</span>
               <FlagIcon />
             </button>
           </div>
@@ -260,17 +260,17 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
             aria-describedby="give-up-body"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 id="give-up-title">לוותר על המשחק?</h2>
+            <h2 id="give-up-title">לחזור לדף הבית?</h2>
             <p id="give-up-body" className="lede">
               {freePlay
-                ? 'המשחק נשמר בטבלה. הדרך המהירה ביותר תופיע שם ברגע שתימצא, ואפשר להמשיך למשחק אחר.'
-                : 'ההתקדמות בסיבוב הזה לא תישמר.'}
+                ? 'המשחק יסתיים ויישמר בטבלה. הדרך המהירה ביותר תופיע שם ברגע שתימצא, ואפשר להמשיך למשחק אחר.'
+                : 'המשחק יסתיים, וההתקדמות בסיבוב הזה לא תישמר.'}
             </p>
             <button className="primary" type="button" autoFocus onClick={cancelGiveUp}>
               המשך לשחק
             </button>
             <button className="secondary danger" type="button" onClick={confirmGiveUp}>
-              ויתור
+              חזרה לדף הבית
             </button>
           </div>
         </div>

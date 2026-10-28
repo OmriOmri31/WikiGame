@@ -84,8 +84,8 @@ test.describe('"קרא את ערך היעד"', () => {
 test.describe('"קרא את ערך היעד" after the update', () => {
   async function giveUp(page) {
     await openMenu(page);
-    await page.getByRole('menuitem', { name: /ויתור/ }).click();
-    await page.getByRole('alertdialog').getByRole('button', { name: 'ויתור' }).click();
+    await page.getByRole('menuitem', { name: 'חזרה לדף הבית' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'חזרה לדף הבית' }).click();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
   }
   const hint = (page) => page.getByRole('button', { name: 'קרא את ערך היעד' });
