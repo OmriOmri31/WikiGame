@@ -109,7 +109,7 @@ service cloud.firestore {
     // sanity limits (types, ranges, sizes), not proof that the game was really played.
     function validScoreFields(data) {
       return data.keys().hasOnly(['uid', 'name', 'pagesVisited', 'timeTaken', 'timestamp', 'mode',
-          'dayKey', 'startTitle', 'goalTitle', 'path', 'fastestPath', 'gaveUp'])
+          'dayKey', 'startTitle', 'goalTitle', 'path', 'fastestPath', 'gaveUp', 'freeKind'])
         && data.name is string && data.name.size() <= 40
         && data.pagesVisited is int && data.pagesVisited >= 1 && data.pagesVisited <= 1000
         && data.timeTaken is number && data.timeTaken >= 0 && data.timeTaken <= 31536000
@@ -119,6 +119,8 @@ service cloud.firestore {
         && data.get('path', []) is list && data.get('path', []).size() <= 1000
         && (!('fastestPath' in data) || (data.fastestPath is list && data.fastestPath.size() <= 25))
         && (!('gaveUp' in data) || data.gaveUp is bool)
+        // Which kind of free game it was. Free games only, and one of the three kinds.
+        && (!('freeKind' in data) || (data.mode == 'free' && data.freeKind in ['random', 'easy', 'custom']))
         && (!('dayKey' in data) || shortText(data.dayKey));
     }
 

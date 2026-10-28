@@ -1,9 +1,18 @@
 import ThemeButton from './ThemeButton';
 
-export default function Stage({ children, className = '' }) {
+// `corner`: more round icon buttons shown in a row with the theme button (the home screen's
+// share and help buttons).
+export default function Stage({ children, className = '', corner = null }) {
   return (
     <div className={className ? `stage ${className}` : 'stage'}>
-      <ThemeButton className="is-corner" />
+      {corner ? (
+        <div className="corner-actions">
+          <ThemeButton />
+          {corner}
+        </div>
+      ) : (
+        <ThemeButton className="is-corner" />
+      )}
       <div className="atmosphere" aria-hidden="true">
         <span className="cloud cloud-a" />
         <span className="cloud cloud-b" />

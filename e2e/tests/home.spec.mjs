@@ -6,7 +6,7 @@ test.describe('home screen', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'he');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page).toHaveTitle('משחק הוויקיפדיה');
-    for (const name of ['משחק יומי', 'משחק חופשי', 'תוצאות', 'איך משחקים?',
+    for (const name of ['משחק יומי', 'משחק חופשי', 'תוצאות', 'שתפו את WikiWiki', 'הסבר על המשחק', 'איך משחקים?',
       'התחברות או הרשמה עם Google', 'התחברות או הרשמה עם אימייל']) {
       await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
     }
@@ -41,19 +41,6 @@ test.describe('home screen', () => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  });
-
-  test('how to play walks through the tutorial', async ({ page }) => {
-    await openHome(page);
-    await page.getByRole('button', { name: 'איך משחקים?' }).click();
-    const tutorial = page.getByRole('dialog', { name: /שלב 1 מתוך/ });
-    await expect(tutorial).toBeVisible();
-    await page.getByRole('button', { name: 'הבא' }).click();
-    await expect(page.getByRole('dialog', { name: /שלב 2 מתוך/ })).toBeVisible();
-    await page.getByRole('button', { name: 'הקודם' }).click();
-    await expect(page.getByRole('dialog', { name: /שלב 1 מתוך/ })).toBeVisible();
-    await page.getByRole('button', { name: 'סגירה' }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
   test('email sign-in form opens, switches tabs and goes back', async ({ page }) => {

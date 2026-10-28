@@ -105,7 +105,7 @@ export default function IntroAlert({ open, rememberable, onDismiss }) {
         <div id="intro-body">
           <p>רק בלחיצה על קישורים. כל יום בחצות עולה זוג ערכים חדש מוויקיפדיה, אותו זוג לכולם.</p>
           <p>פחות דפים, מקום גבוה יותר בטבלה. בשוויון, הזמן קובע.</p>
-          <p>במשחק החופשי מקבלים זוג חדש בכל סיבוב.</p>
+          <p>במשחק החופשי בוחרים: זוג אקראי, זוג קל, או ערכים שבוחרים בעצמכם.</p>
         </div>
         {rememberable ? (
           <label className="intro-remember">

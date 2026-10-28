@@ -3044,27 +3044,74 @@ html[data-theme="dark"] .stage-home input {
   transition: transform 160ms ease-out, background-color 120ms ease-out;
 }
 
-.tutorial {
+.how-to-play:active {
+  transform: scale(0.97);
+}
+
+/* The in-game tutorial: grey everywhere except the one thing to press, and a short line by it. */
+.coach {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: max(12px, env(safe-area-inset-top));
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
-  padding-inline: 20px;
-  background: var(--paper);
-  color: var(--home-ink, var(--label));
+  z-index: 1100;
+  pointer-events: none;
 }
 
-.tutorial-bar {
-  display: flex;
-  justify-content: flex-end;
-  flex: 0 0 auto;
+.coach-shade {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.58);
+  pointer-events: auto;
+  touch-action: none;
 }
 
-.tutorial-close {
+.coach-ring {
+  position: fixed;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px var(--blue), 0 0 0 7px rgba(10, 132, 255, 0.28);
+  pointer-events: none;
+}
+
+.coach-ring.is-blocking { pointer-events: auto; }
+
+.coach-bubble {
+  position: fixed;
+  inset-inline: 12px;
+  max-width: 340px;
+  margin-inline: auto;
+  padding: 12px 16px 14px;
+  border-radius: 18px;
+  background: var(--surface-solid);
+  color: var(--label);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  pointer-events: auto;
+  animation: fade-in 0.2s ease;
+}
+
+.coach-count {
+  margin: 0 0 4px;
+  color: var(--secondary-label);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.coach-text {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.011em;
+  text-wrap: balance;
+}
+
+.coach-next {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.coach-close {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  inset-inline-start: 10px;
   width: 44px;
   height: 44px;
   display: grid;
@@ -3073,82 +3120,170 @@ html[data-theme="dark"] .stage-home input {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--stage-fill);
-  color: var(--home-ink, var(--label));
+  background: var(--surface-solid);
+  color: var(--label);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   cursor: pointer;
+  pointer-events: auto;
   touch-action: manipulation;
-  transition: transform 160ms ease-out, background-color 120ms ease-out;
 }
 
-.tutorial-close svg {
+.coach-close svg {
   width: 22px;
   height: 22px;
   display: block;
 }
 
-.tutorial-close:active,
-.how-to-play:active {
-  transform: scale(0.97);
-}
-
-.tutorial-figure {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  place-items: center;
-  margin: 0;
-}
-
-.tutorial-figure img {
-  max-width: min(420px, 100%);
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 18px;
-  box-shadow: 0 10px 28px rgba(22, 22, 22, 0.08);
-}
-
-.tutorial-line {
-  flex: 0 0 auto;
-  margin: 0;
-  text-align: center;
-  font-size: 1.2rem;
-  font-weight: 600;
-  letter-spacing: -0.014em;
-  line-height: 1.35;
-}
-
-.tutorial-nav {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 10px;
-}
-
-.tutorial-nav .primary,
-.tutorial-nav .secondary {
-  margin-top: 0;
-  flex: 1;
-}
+.coach-close:active { transform: scale(0.96); }
 
 @media (prefers-reduced-motion: reduce) {
-  .how-to-play,
-  .tutorial-close {
-    transition: none;
-  }
-
+  .how-to-play { transition: none; }
   .how-to-play:active,
-  .tutorial-close:active {
-    transform: none;
-  }
+  .coach-close:active { transform: none; }
+  .coach-bubble { animation: none; }
 }
 
 @media (prefers-contrast: more) {
   .how-to-play,
-  .tutorial-close,
-  .tutorial-figure img {
+  .coach-close,
+  .coach-bubble {
     box-shadow: inset 0 0 0 1px var(--home-ink, var(--label));
   }
+  .coach-shade { background: rgba(0, 0, 0, 0.75); }
+}
+
+/* "קרא את ערך היעד": small, under the goal, in a player's first three games. */
+.goal-hint {
+  display: block;
+  min-height: 34px;
+  margin: 2px auto -6px;
+  padding: 4px 12px;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* "משחק חופשי": random, easy, or the player's own pair. */
+.free-kinds {
+  display: grid;
+  gap: 10px;
+}
+
+.free-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--stage-fill);
+  color: var(--stage-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 160ms ease-out;
+}
+
+.free-kind:active { transform: scale(0.98); }
+
+.free-kind-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.free-kind-line {
+  color: var(--stage-muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.free-cancel {
+  display: block;
+  margin: 10px auto 0;
+}
+
+.free-chooser {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.pick-field {
+  position: relative;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.pick-field input { margin-bottom: 0; }
+
+.pick-field .form-error { margin: 6px 0 0; }
+
+.pick-suggest {
+  position: absolute;
+  z-index: 5;
+  inset-inline: 0;
+  top: calc(100% + 2px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 14px;
+  background: var(--stage-panel-solid);
+  box-shadow: var(--stage-shadow);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.pick-suggest button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--stage-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pick-suggest button small {
+  color: var(--stage-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.pick-suggest button.is-active,
+.pick-suggest button:hover { background: var(--stage-fill); }
+
+/* A list with only a note must not swallow a tap on the button under it. */
+.pick-suggest.is-note { pointer-events: none; }
+
+.pick-suggest-note {
+  padding: 8px 10px;
+  color: var(--stage-muted);
+}
+
+.custom-pair .primary { margin-top: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .free-kind { transition: none; }
+  .free-kind:active { transform: none; }
 }
 
 
@@ -3810,4 +3945,45 @@ input.has-hint { margin-bottom: 6px; }
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Home: the theme, share and help buttons in one row in the corner. Left to right on purpose, so
+   the theme button keeps its place in the corner. */
+.corner-actions {
+  position: fixed;
+  z-index: 8;
+  top: max(18px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  direction: ltr;
+}
+
+.corner-share { position: relative; display: block; }
+
+.corner-note {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--stage-panel-solid, var(--surface-solid));
+  color: var(--stage-ink, var(--label));
+  box-shadow: inset 0 0 0 1px var(--stage-line, var(--separator)), 0 6px 18px rgba(2, 6, 23, 0.12);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  direction: rtl;
+  pointer-events: none;
+}
+
+/* Stays in the page while empty, so screen readers hear the note when it appears. */
+.corner-note:empty { padding: 0; opacity: 0; box-shadow: none; }
+
+.help-button span {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
 }

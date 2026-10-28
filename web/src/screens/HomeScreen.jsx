@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   GoogleAuthProvider,
   linkWithCredential,
@@ -26,7 +26,9 @@ import { prefetchDailyDoc, readDailyDoc } from '../dailyDoc';
 import { prefetchDailyStart } from '../dailyStart';
 import Stage from '../Stage';
 import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen } from './IntroAlert';
-import Tutorial from './Tutorial';
+import FreePlayChooser from './FreePlayChooser';
+import { noteKnownGames } from '../gameCount';
+import { shareApp } from '../share';
 import { InfoLinks, PageLink } from '../InfoLinks';
 import { useTheme } from '../ThemeButton';
 import { formatDuration, formatScoreDate, timestampMillis } from '../time';
@@ -63,7 +65,56 @@ async function loadPersonalScores(uid) {
   return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
 }
 
-export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onLeaderboard, onDesk, onOpenPage }) {
+function ShareIcon() {
+  return (
+    <svg className="sun-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 14.5V3.5M8.2 7.2 12 3.4l3.8 3.8M8.5 10.5H7a1.6 1.6 0 0 0-1.6 1.6v7.3A1.6 1.6 0 0 0 7 21h10a1.6 1.6 0 0 0 1.6-1.6v-7.3a1.6 1.6 0 0 0-1.6-1.6h-1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Invites a friend: the share sheet where there is one, otherwise the link is copied and a short
+// note shows under the button.
+function ShareAppButton() {
+  const [note, setNote] = useState('');
+  const timerRef = useRef(0);
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  async function share() {
+    const outcome = await shareApp();
+    if (outcome !== 'copied' && outcome !== 'failed') return;
+    setNote(outcome === 'copied' ? 'הקישור הועתק' : 'לא הצלחנו להעתיק');
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setNote(''), 2500);
+  }
+
+  return (
+    <span className="corner-share">
+      <button className="sun-button" type="button" aria-label="שתפו את WikiWiki" title="שתפו את WikiWiki" onClick={share}>
+        <ShareIcon />
+      </button>
+      <span className="corner-note" role="status" aria-live="polite">{note}</span>
+    </span>
+  );
+}
+
+// Opens the short explanation of the game (the same alert that greets the player once a day).
+function HelpButton({ onClick }) {
+  return (
+    <button className="sun-button help-button" type="button" aria-label="הסבר על המשחק" title="הסבר על המשחק" onClick={onClick}>
+      <span aria-hidden="true">?</span>
+    </button>
+  );
+}
+
+export default function HomeScreen({ user, redirectError, onStart, onFreePlay, onTutorial, onLeaderboard, onDesk, onOpenPage }) {
   const theme = useTheme();
   const [mode, setMode] = useState('sign-in');
   const [mailOpen, setMailOpen] = useState(false);
@@ -80,15 +131,12 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [myScores, setMyScores] = useState([]);
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresError, setScoresError] = useState('');
-  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(() => claimIntroThisSession(Boolean(user) && introSeen()));
   const dismissIntro = useCallback((hideForever) => {
     if (hideForever) markIntroSeen();
     setShowIntro(false);
-  }, []);
-  const closeTutorial = useCallback(() => {
-    setTutorialOpen(false);
   }, []);
 
   // Start reading today's daily document and loading today's two articles now, in the
@@ -127,6 +175,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     loadPersonalScores(user.uid)
       .then((rows) => {
         if (cancelled) return;
+        noteKnownGames(rows.length);
         setMyScores(dailyScores([...rows, ...localDaily]));
       })
       .catch((loadError) => {
@@ -163,9 +212,10 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     onStart();
   }
 
-  function startFreePlay() {
+  function startFreePlay(freeKind, pair) {
     enterFullscreen();
-    onFreePlay();
+    setChooserOpen(false);
+    onFreePlay(freeKind, pair);
   }
 
   async function submitSignIn(event) {
@@ -379,8 +429,16 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const logoSrc = theme === 'dark' ? '/wikiwiki-logo-dark.webp' : '/wikiwiki-logo.webp';
 
   return (
-    <Stage className="stage-home">
-      <button className="how-to-play" type="button" onClick={() => setTutorialOpen(true)}>
+    <Stage
+      className="stage-home"
+      corner={(
+        <>
+          <ShareAppButton />
+          <HelpButton onClick={() => setShowIntro(true)} />
+        </>
+      )}
+    >
+      <button className="how-to-play" type="button" onClick={onTutorial}>
         איך משחקים?
       </button>
       <main className="home-page">
@@ -400,7 +458,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
         <section className="home-actions" aria-label="התחלה">
           {user ? <h2 className="greeting">שלום, {greeting}</h2> : null}
           <button className="primary" type="button" onClick={startGame}>משחק יומי</button>
-          <button className="secondary" type="button" onClick={startFreePlay}>משחק חופשי</button>
+          <button className="secondary" type="button" onClick={() => setChooserOpen(true)}>משחק חופשי</button>
           <button className="text-button home-board-link" type="button" onClick={onLeaderboard}>
             תוצאות
           </button>
@@ -633,8 +691,8 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           <DeleteAccountDialog user={user} onClose={() => setDeleteOpen(false)} />
         </Suspense>
       ) : null}
-      <IntroAlert open={showIntro && !tutorialOpen} rememberable={Boolean(user)} onDismiss={dismissIntro} />
-      {tutorialOpen ? <Tutorial onClose={closeTutorial} /> : null}
+      <IntroAlert open={showIntro && !chooserOpen} rememberable={Boolean(user)} onDismiss={dismissIntro} />
+      {chooserOpen ? <FreePlayChooser onPlay={startFreePlay} onClose={() => setChooserOpen(false)} /> : null}
     </Stage>
   );
 }

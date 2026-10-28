@@ -63,12 +63,12 @@ jobs:
         working-directory: rules-tests
         run: |
           npm test 2>&1 | tee rules-output.txt
-          # Guard against tests silently disappearing: at least 168 must run and none may fail.
+          # Guard against tests silently disappearing: at least 182 must run and none may fail.
           total=$(grep -oE 'Total: [0-9]+ passed, [0-9]+ failed' rules-output.txt | tail -1)
           passed=$(echo "$total" | grep -oE '[0-9]+' | head -1)
           failed=$(echo "$total" | grep -oE '[0-9]+' | tail -1)
           echo "Rules tests: ${passed:-0} passed, ${failed:-?} failed"
-          [ -n "$total" ] && [ "$failed" = 0 ] && [ "$passed" -ge 168 ]
+          [ -n "$total" ] && [ "$failed" = 0 ] && [ "$passed" -ge 182 ]
 
   build:
     name: Build, production guards, bundle size, audit
