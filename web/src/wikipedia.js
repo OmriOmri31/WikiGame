@@ -92,7 +92,7 @@ function retryDelay(response) {
   return Math.min(ARTICLE_MAX_RETRY_WAIT_MS, Math.max(ARTICLE_RETRY_DELAY_MS, ms));
 }
 
-async function fetchArticleOnce(endpoint, { fetchImpl, timeoutMs }) {
+async function fetchJsonOnce(endpoint, { fetchImpl, timeoutMs }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -114,16 +114,96 @@ async function fetchArticleOnce(endpoint, { fetchImpl, timeoutMs }) {
     } catch (error) {
       throw articleError(controller.signal.aborted ? 'timeout' : 'network', error?.message);
     }
-    if (data.error || !data.parse?.text?.['*']) {
-      throw articleError(data.error?.code || 'missing', data.error?.info || 'missing');
-    }
-    return {
-      title: data.parse.title,
-      html: data.parse.text['*'],
-    };
+    return data;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchArticleOnce(endpoint, options) {
+  const data = await fetchJsonOnce(endpoint, options);
+  if (data.error || !data.parse?.text?.['*']) {
+    throw articleError(data.error?.code || 'missing', data.error?.info || 'missing');
+  }
+  const article = {
+    title: data.parse.title,
+    html: data.parse.text['*'],
+  };
+  if (isCategoryTitle(article.title)) {
+    const members = await fetchCategoryMembers(article.title, options);
+    article.html += categoryMembersHtml(article.title, members);
+  }
+  return article;
+}
+
+// Category pages: the parsed page holds only the category's own text (often nothing). Its list of
+// pages and subcategories is built by Wikipedia outside the page text, so it is asked for here and
+// added as ordinary article links, which makes a category page playable like any other.
+const CATEGORY_PREFIXES = new Set(['קטגוריה', 'category']);
+const CATEGORY_MAX_REQUESTS = 4; // up to 2,000 members
+
+export function isCategoryTitle(title) {
+  const name = normalizeTitle(title);
+  const colon = name.indexOf(':');
+  return colon > 0 && CATEGORY_PREFIXES.has(name.slice(0, colon).trim().toLowerCase());
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function memberLink(title, label = title) {
+  const href = `/wiki/${encodeURIComponent(normalizeTitle(title).replace(/ /g, '_'))}`;
+  return `<a href="${escapeHtml(href)}" title="${escapeHtml(title)}">${escapeHtml(label)}</a>`;
+}
+
+function withoutPrefix(title) {
+  const name = normalizeTitle(title);
+  return name.slice(name.indexOf(':') + 1).trim();
+}
+
+// members: [{ ns, title }] in Wikipedia's order. Files (ns 6) are left out: they are not articles.
+export function categoryMembersHtml(categoryTitle, members) {
+  const subcats = members.filter((member) => member.ns === 14);
+  const pages = members.filter((member) => member.ns !== 14 && member.ns !== 6);
+  if (!subcats.length && !pages.length) return '';
+  const list = (items, label) => `<ul>${items.map((item) => `<li>${memberLink(item.title, label(item))}</li>`).join('')}</ul>`;
+  let html = '<div class="category-members">';
+  if (subcats.length) {
+    html += `<h2>קטגוריות משנה</h2>${list(subcats, (item) => withoutPrefix(item.title))}`;
+  }
+  if (pages.length) {
+    html += `<h2>דפים בקטגוריה &quot;${escapeHtml(withoutPrefix(categoryTitle))}&quot;</h2>${list(pages, (item) => normalizeTitle(item.title))}`;
+  }
+  return `${html}</div>`;
+}
+
+async function fetchCategoryMembers(title, { fetchImpl, timeoutMs }) {
+  const members = [];
+  let cont = null;
+  for (let request = 0; request < CATEGORY_MAX_REQUESTS; request += 1) {
+    const endpoint = new URL(API);
+    endpoint.searchParams.set('action', 'query');
+    endpoint.searchParams.set('list', 'categorymembers');
+    endpoint.searchParams.set('cmtitle', normalizeTitle(title));
+    endpoint.searchParams.set('cmtype', 'subcat|page');
+    endpoint.searchParams.set('cmprop', 'title');
+    endpoint.searchParams.set('cmlimit', 'max');
+    endpoint.searchParams.set('format', 'json');
+    endpoint.searchParams.set('origin', '*');
+    if (cont) endpoint.searchParams.set('cmcontinue', cont);
+    const data = await fetchJsonOnce(endpoint, { fetchImpl, timeoutMs });
+    (data.query?.categorymembers || []).forEach((member) => {
+      if (member?.title) members.push({ ns: member.ns, title: member.title });
+    });
+    cont = data.continue?.cmcontinue;
+    if (!cont) break;
+  }
+  return members;
 }
 
 function retryable(error) {

@@ -1,7 +1,7 @@
 import {
   test, expect, openHome, articleLink, waitForArticle, titled, startDaily, openMenu, openFreeBoard, pagesStat, startFree,
 } from '../fixtures.mjs';
-import { DAILY, FREE_POOL } from '../wiki-mock.mjs';
+import { CATEGORY, DAILY, FREE_POOL } from '../wiki-mock.mjs';
 
 test.describe('daily game (guest, no sign-in)', () => {
   test('play through links to the goal, see the end screen and the board', async ({ page }) => {
@@ -215,5 +215,27 @@ test.describe('free game', () => {
     await expect(free.getByRole('button', { name: 'שחק שוב' })).toBeVisible();
     // A game given up has nothing to share.
     await expect(free.getByRole('button', { name: 'שיתוף' })).toHaveCount(0);
+  });
+});
+
+test.describe('category pages', () => {
+  // The real page was "קטגוריה:בוגרי ישיבת חברון כנסת ישראל": empty in the game, because a category's
+  // list of pages is not part of its parsed text.
+  test('a category page lists its pages and subcategories, and they can be followed', async ({ page }) => {
+    await startDaily(page);
+    await articleLink(page, 'חיפה').click();
+    await waitForArticle(page, 'חיפה');
+    await articleLink(page, CATEGORY).click();
+    await waitForArticle(page, CATEGORY);
+    const body = page.locator('.article-scroll .article-body');
+    await expect(body.getByRole('heading', { name: 'דפים בקטגוריה "ערים"' })).toBeVisible();
+    await expect(body.getByRole('heading', { name: 'קטגוריות משנה' })).toBeVisible();
+    await expect(body.getByRole('link', { name: 'ערי נמל', exact: true })).toBeVisible();
+    await expect(body.getByRole('link', { name: 'ירושלים', exact: true })).toBeVisible();
+    await expect(body.getByText('מפה.png')).toHaveCount(0);
+    await expect(pagesStat(page)).toContainText('3');
+    await articleLink(page, 'ישראל').click();
+    await waitForArticle(page, 'ישראל');
+    await expect(pagesStat(page)).toContainText('4');
   });
 });
