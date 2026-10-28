@@ -134,9 +134,12 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const [chooserOpen, setChooserOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(() => claimIntroThisSession(Boolean(user) && introSeen()));
+  // Opened from the "?" button: the player asked for it, so no "don't show again" box.
+  const [introFromHelp, setIntroFromHelp] = useState(false);
   const dismissIntro = useCallback((hideForever) => {
     if (hideForever) markIntroSeen();
     setShowIntro(false);
+    setIntroFromHelp(false);
   }, []);
 
   // Start reading today's daily document and loading today's two articles now, in the
@@ -434,7 +437,12 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
       corner={(
         <>
           <ShareAppButton />
-          <HelpButton onClick={() => setShowIntro(true)} />
+          <HelpButton
+            onClick={() => {
+              setIntroFromHelp(true);
+              setShowIntro(true);
+            }}
+          />
         </>
       )}
     >
@@ -691,7 +699,7 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           <DeleteAccountDialog user={user} onClose={() => setDeleteOpen(false)} />
         </Suspense>
       ) : null}
-      <IntroAlert open={showIntro && !chooserOpen} rememberable={Boolean(user)} onDismiss={dismissIntro} />
+      <IntroAlert open={showIntro && !chooserOpen} rememberable={Boolean(user) && !introFromHelp} onDismiss={dismissIntro} />
       {chooserOpen ? <FreePlayChooser onPlay={startFreePlay} onClose={() => setChooserOpen(false)} /> : null}
     </Stage>
   );
