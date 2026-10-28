@@ -18,6 +18,7 @@ import { isWikiBot, pathLinkNames, WIKI_BOT_NAME } from '../wikiBot';
 import { addIsraelDays, articleUrl, israelDateKey, normalizeTitle } from '../wikipedia';
 import { israelMidnightMs, scoreDateKey } from '../dailyPair';
 import { shareResult } from '../share';
+import { FREE_KIND_NAMES } from '../freeKind';
 
 const FREE_PAGE = 20;
 
@@ -220,6 +221,9 @@ function FreePlayRow({ row, highlighted, searching, missed, onShowPath, onShowFa
         <bdi>{row.startTitle || '—'}</bdi>
         <span className="path-sep" aria-hidden="true"> ← </span>
         <bdi>{row.goalTitle || '—'}</bdi>
+        {row.freeKind === 'easy' || row.freeKind === 'custom' ? (
+          <span className="give-up-mark free-kind-mark">{FREE_KIND_NAMES[row.freeKind]}</span>
+        ) : null}
         {row.gaveUp ? <span className="give-up-mark">ויתור</span> : null}
       </p>
       {searching ? (

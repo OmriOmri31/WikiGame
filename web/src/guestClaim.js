@@ -70,6 +70,7 @@ async function claimOnce(user, nickname) {
     path: row.path,
     ...(Array.isArray(row.fastestPath) ? { fastestPath: row.fastestPath } : {}),
     ...(row.gaveUp ? { gaveUp: true } : {}),
+    ...(row.mode === 'free' && row.freeKind ? { freeKind: row.freeKind } : {}),
   };
   if (row.mode === 'daily') {
     const saved = await saveDailyScore(user.uid, today, data);
@@ -78,7 +79,14 @@ async function claimOnce(user, nickname) {
       return 'skipped';
     }
   } else {
-    await addDoc(collection(db, 'scores'), data);
+    try {
+      await addDoc(collection(db, 'scores'), data);
+    } catch (error) {
+      // Rules that don't know the free game's kind yet: save the result without it.
+      if (!data.freeKind || error?.code !== 'permission-denied') throw error;
+      const { freeKind: _kind, ...plain } = data;
+      await addDoc(collection(db, 'scores'), plain);
+    }
   }
   dropLocalRow(id);
   return 'saved';

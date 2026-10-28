@@ -7,6 +7,8 @@ Play it at https://wikiwiki-game.netlify.app.
 
 - `web/` – the site (React + Vite) and its Netlify functions (`web/netlify/functions`).
 - `firestore.rules` – Firestore security rules, tested in `rules-tests/`.
+- `scripts/build-easy-pool.mjs` – rebuilds `web/public/easy-pool.json`, the well-known articles the
+  "easy" free game draws from (`node scripts/build-easy-pool.mjs`, then review the diff).
 - `.github/workflows/` – rules deploys and the daily lottery (both run for real only from `main`).
 
 ## Running your own copy

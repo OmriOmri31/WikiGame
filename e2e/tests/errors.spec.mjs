@@ -1,4 +1,4 @@
-import { test, expect, openHome, articleLink, waitForArticle, startDaily, pagesStat } from '../fixtures.mjs';
+import { test, expect, openHome, articleLink, waitForArticle, startDaily, pagesStat, startFree } from '../fixtures.mjs';
 import { DAILY } from '../wiki-mock.mjs';
 
 const RETRY = 'לא הצלחנו לטעון את הערך. אפשר לנסות שוב.';
@@ -57,7 +57,7 @@ test.describe('when Wikipedia fails', () => {
   test('the free game cannot load without the most-read list, then loads', async ({ page, wikiState }) => {
     wikiState.pageviews = 'fail';
     await openHome(page);
-    await page.getByRole('button', { name: 'משחק חופשי' }).click();
+    await startFree(page);
     await expect(page.getByRole('alert')).toHaveText('לא ניתן לטעון משחק חופשי.', { timeout: 15_000 });
     wikiState.pageviews = 'ok';
     await page.getByRole('button', { name: 'נסו שוב' }).click();

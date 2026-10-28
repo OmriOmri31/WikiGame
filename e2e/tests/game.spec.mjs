@@ -1,5 +1,5 @@
 import {
-  test, expect, openHome, articleLink, waitForArticle, titled, startDaily, openMenu, openFreeBoard, pagesStat,
+  test, expect, openHome, articleLink, waitForArticle, titled, startDaily, openMenu, openFreeBoard, pagesStat, startFree,
 } from '../fixtures.mjs';
 import { DAILY, FREE_POOL } from '../wiki-mock.mjs';
 
@@ -179,7 +179,7 @@ test.describe('daily game (guest, no sign-in)', () => {
 test.describe('free game', () => {
   test('starts a pair from the most-read list, wins, finds the fastest route and plays again', async ({ page }) => {
     await openHome(page);
-    await page.getByRole('button', { name: 'משחק חופשי' }).click();
+    await startFree(page);
     const start = page.locator('.route-title');
     await expect(start).toHaveText(/\S/);
     const startTitle = (await start.textContent()).trim();
@@ -205,7 +205,7 @@ test.describe('free game', () => {
 
   test('give up saves the game to the free board', async ({ page }) => {
     await openHome(page);
-    await page.getByRole('button', { name: 'משחק חופשי' }).click();
+    await startFree(page);
     await expect(page.locator('.route-title')).toHaveText(/\S/);
     await openMenu(page);
     await page.getByRole('menuitem', { name: /ויתור/ }).click();

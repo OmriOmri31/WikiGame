@@ -8,7 +8,9 @@ import { rememberLinkFromError } from './linking';
 import { claimGuestResult } from './guestClaim';
 import { loadProfile, needsEmailVerification, pendingNickname } from './nickname';
 import { KeepNicknameScreen, NicknameScreen, VerifyEmailScreen } from './screens/AccountGate';
-import { exitFullscreen } from './fullscreen';
+import { enterFullscreen, exitFullscreen } from './fullscreen';
+import { cleanFreeKind } from './freeKind';
+import { needsTutorial } from './gameCount';
 import { clearGameSession, loadGameSession } from './gameSession';
 import { isTestAdmin, onTestDeskPage, pageTitle } from './testSite';
 import Stage from './Stage';
@@ -35,6 +37,7 @@ function resumedMatch(session) {
   if (!session) return { mode: 'daily', pair: null, id: 0, resume: null };
   return {
     mode: session.mode,
+    freeKind: session.freeKind || 'random',
     pair: { startTitle: session.startTitle, goalTitle: session.goalTitle },
     id: 1,
     resume: session,
@@ -89,15 +92,24 @@ function AppScreens() {
   function beginGame(next) {
     clearGameSession();
     const nextPair = next.pair?.startTitle && next.pair?.goalTitle ? next.pair : null;
-    const mode = next.mode === 'free' || next.mode === 'preview' ? next.mode : 'daily';
+    const mode = ['free', 'preview', 'tutorial'].includes(next.mode) ? next.mode : 'daily';
     setResult(null);
     setMatch({
       mode,
-      pair: nextPair,
+      freeKind: mode === 'free' ? cleanFreeKind(next.freeKind) : '',
+      // After the tutorial: the game the player asked for, or home (null).
+      then: mode === 'tutorial' ? (next.then || null) : null,
+      pair: mode === 'tutorial' ? null : nextPair,
       id: Date.now(),
       resume: null,
     });
     setScreen('game');
+  }
+
+  // A player's first game starts with the tutorial, then goes on to the game they chose.
+  function playOrLearn(game) {
+    if (needsTutorial()) beginGame({ mode: 'tutorial', then: game });
+    else beginGame(game);
   }
 
   useEffect(() => {
@@ -282,8 +294,18 @@ function AppScreens() {
         key={match.id}
         user={user}
         mode={match.mode}
+        freeKind={match.freeKind}
         pair={match.pair}
         resume={match.resume}
+        tutorialDoneLabel={match.then ? 'למשחק' : 'סיום'}
+        onTutorialDone={() => {
+          if (match.then) {
+            enterFullscreen();
+            beginGame(match.then);
+          } else {
+            setScreen('home');
+          }
+        }}
         onFinish={(score) => {
           if (match.mode === 'preview') {
             setScreen('admin');
@@ -311,6 +333,7 @@ function AppScreens() {
         onOpenPage={openInfo}
         onPlayAgain={(row) => beginGame({
           mode: row.mode === 'free' ? 'free' : 'daily',
+          freeKind: row.freeKind,
           pair: { startTitle: row.startTitle, goalTitle: row.goalTitle },
         })}
       />
@@ -350,8 +373,9 @@ function AppScreens() {
     <HomeScreen
       user={user}
       redirectError={authNotice}
-      onStart={() => beginGame({ mode: 'daily' })}
-      onFreePlay={() => beginGame({ mode: 'free' })}
+      onStart={() => playOrLearn({ mode: 'daily' })}
+      onFreePlay={(freeKind, pair) => playOrLearn({ mode: 'free', freeKind, pair })}
+      onTutorial={() => beginGame({ mode: 'tutorial' })}
       onLeaderboard={() => setScreen('leaderboard')}
       onDesk={isAdmin(user) ? openDesk : null}
       onOpenPage={openInfo}

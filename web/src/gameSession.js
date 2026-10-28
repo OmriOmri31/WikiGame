@@ -30,6 +30,9 @@ export function loadGameSession() {
       elapsedMs,
       scrollTop: Number.isFinite(scrollTop) && scrollTop > 0 ? Math.min(scrollTop, 5000000) : 0,
       goalOpen: parsed.goalOpen === true,
+      ...(parsed.mode === 'free' && ['random', 'easy', 'custom'].includes(parsed.freeKind)
+        ? { freeKind: parsed.freeKind }
+        : {}),
       ...(typeof parsed.dailyKey === 'string' && /^\d{4}-\d{2}-\d{2}$|^$/.test(parsed.dailyKey)
         ? { dailyKey: parsed.dailyKey }
         : {}),

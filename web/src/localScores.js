@@ -37,6 +37,7 @@ export function saveLocalScore(score) {
   if (row.mode === 'daily' && typeof score.dayKey === 'string' && score.dayKey) row.dayKey = score.dayKey;
   if (Array.isArray(score.fastestPath)) row.fastestPath = score.fastestPath;
   if (score.gaveUp) row.gaveUp = true;
+  if (row.mode === 'free' && ['random', 'easy', 'custom'].includes(score.freeKind)) row.freeKind = score.freeKind;
   const next = [row, ...loadLocalScores()].slice(0, MAX_SCORES);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return row;

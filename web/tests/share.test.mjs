@@ -35,3 +35,44 @@ test('long games are cut short and missing data is handled', () => {
   const text = buildShareText({ mode: 'daily', pagesVisited: 1 });
   assert.equal(text, ['המשחק היומי ב־WikiWiki', '🟩', 'הגעתי ליעד בדף אחד', SITE_URL].join('\n'));
 });
+
+test('a free game on a pair the player chose says so', async () => {
+  const { buildShareText: build } = await import('../src/share.js');
+  const text = build({ mode: 'free', freeKind: 'custom', pagesVisited: 2, timeTaken: 5, startTitle: 'חתול', goalTitle: 'כלב' });
+  assert.equal(text.split('\n')[0], 'משחק חופשי ב־WikiWiki · זוג שבחרתי');
+});
+
+test('the app invitation is short Hebrew with the production link', async () => {
+  const { buildAppShareText } = await import('../src/share.js');
+  const text = buildAppShareText();
+  const lines = text.split('\n');
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^בואו לשחק ב־WikiWiki/);
+  assert.equal(lines[1], 'https://wikiwiki-game.netlify.app');
+  assert.equal(SITE_URL, 'https://wikiwiki-game.netlify.app');
+});
+
+test('sharing uses the share sheet when there is one, otherwise copies', async () => {
+  const { shareApp } = await import('../src/share.js');
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    let shared = null;
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { share: async (data) => { shared = data; } } });
+    assert.equal(await shareApp(), 'shared');
+    assert.match(shared.text, /wikiwiki-game\.netlify\.app/);
+
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { share: async () => { const error = new Error('no'); error.name = 'AbortError'; throw error; } },
+    });
+    assert.equal(await shareApp(), 'cancelled');
+
+    let copied = '';
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: async (text) => { copied = text; } } } });
+    assert.equal(await shareApp(), 'copied');
+    assert.match(copied, /^בואו לשחק/);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'navigator', original);
+    else delete globalThis.navigator;
+  }
+});

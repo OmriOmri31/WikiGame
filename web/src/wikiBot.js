@@ -245,7 +245,7 @@ function stitch(meet, parentTowardStart, parentTowardGoal) {
 function articleSuggestions(data) {
   const pages = data?.query?.pages || [];
   return pages
-    .filter((page) => page && !page.missing && page.ns === 0 && !page.pageprops?.disambiguation && page.title)
+    .filter((page) => page && !page.missing && page.ns === 0 && !isDisambiguation(page) && page.title)
     .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
     .map((page) => ({
       title: normalizeTitle(page.title),
@@ -296,6 +296,12 @@ export async function suggestArticles(query) {
   return merged.slice(0, 8);
 }
 
+// The API marks a disambiguation page with pageprops.disambiguation set to an empty string,
+// so check that the key is there, not that its value is truthy.
+export function isDisambiguation(page) {
+  return Boolean(page?.pageprops) && Object.hasOwn(page.pageprops, 'disambiguation');
+}
+
 export async function confirmedArticle(title) {
   const search = normalizeTitle(title);
   if (!search || search.includes('|')) {
@@ -321,7 +327,7 @@ export async function confirmedArticle(title) {
     error.code = 'missingtitle';
     throw error;
   }
-  if (page.pageprops?.disambiguation) {
+  if (isDisambiguation(page)) {
     const error = new Error('disambiguation');
     error.code = 'disambiguation';
     throw error;
@@ -789,4 +795,18 @@ function fnv(text, seed) {
 export function botScoreId(stamp, start, goal) {
   const raw = `${stamp}|${normalizeTitle(start)}|${normalizeTitle(goal)}`;
   return `wiki-bot-${fnv(raw, 2166136261)}-${fnv(raw, 2166136261 ^ 0x811c9dc5)}`;
+}
+
+// For a pair a player picked: the start must link to at least one article and the goal must be
+// linked from at least one, or the game can't be won. Returns { out, in } as booleans.
+export async function pairHasLinks(startTitle, goalTitle) {
+  const [outgoing, incoming] = await Promise.all([
+    wikiGet({ action: 'query', titles: normalizeTitle(startTitle), prop: 'links', plnamespace: '0', pllimit: '1' }),
+    wikiGet({ action: 'query', titles: normalizeTitle(goalTitle), prop: 'linkshere', lhnamespace: '0', lhlimit: '1' }),
+  ]);
+  const first = (data) => (data?.query?.pages || [])[0] || {};
+  return {
+    out: (first(outgoing).links || []).length > 0,
+    in: (first(incoming).linkshere || []).length > 0,
+  };
 }

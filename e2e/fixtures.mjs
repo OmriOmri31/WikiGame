@@ -14,10 +14,12 @@ export const test = base.extend({
   // Per test: wikiState.overrides[title] = 'fail' | 'stall' | 'missing', changeable mid-test.
   wikiState: async ({}, use) => { await use({ overrides: {}, log: [], pageviews: 'ok' }); },
   skipIntro: [true, { option: true }],
+  // Most tests start as a player who already went through the tutorial.
+  skipTutorial: [true, { option: true }],
   external: async ({}, use) => { await use([]); },
   consoleErrors: async ({}, use) => { await use([]); },
 
-  page: async ({ page, wikiState, skipIntro, external, consoleErrors }, use) => {
+  page: async ({ page, wikiState, skipIntro, skipTutorial, external, consoleErrors }, use) => {
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text());
     });
@@ -35,6 +37,11 @@ export const test = base.extend({
       await page.addInitScript((day) => {
         try { localStorage.setItem('wikigame.introDay', day); } catch { /* ignore */ }
       }, today);
+    }
+    if (skipTutorial) {
+      await page.addInitScript(() => {
+        try { localStorage.setItem('wikigame.tutorialSeen', '1'); } catch { /* ignore */ }
+      });
     }
     await use(page);
     const firebase = external.filter((url) => PRODUCTION_FIREBASE.test(url));
@@ -73,6 +80,14 @@ export async function startDaily(page) {
   await waitForArticle(page, DAILY.start);
   await expect(page.locator('.route-title')).toHaveText(titled(DAILY.start));
   await expect(page.getByRole('button', { name: titled(DAILY.goal) })).toBeVisible();
+}
+
+// "משחק חופשי" asks which kind of free game; `kind` is the button's name.
+export async function startFree(page, kind = 'אקראי') {
+  await page.getByRole('button', { name: 'משחק חופשי' }).click();
+  const chooser = page.getByRole('dialog', { name: 'משחק חופשי' });
+  await expect(chooser).toBeVisible();
+  await chooser.getByRole('button', { name: new RegExp(`^${kind}`) }).click();
 }
 
 export async function openMenu(page) {
