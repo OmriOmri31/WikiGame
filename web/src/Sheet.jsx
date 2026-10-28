@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { project, readTranslateY, rubberband, spring } from './spring';
+import { useBackCloses } from './backGuard';
 
 function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -23,6 +24,7 @@ export default function Sheet({ open, onOpenChange, label, header, children }) {
   const closeVelocity = useRef(0);
 
   if (open && !mounted) setMounted(true);
+  useBackCloses(open, () => onOpenChange(false));
 
   useEffect(() => {
     if (!open) return undefined;

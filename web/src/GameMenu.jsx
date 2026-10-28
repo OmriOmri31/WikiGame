@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { spring } from './spring';
 import { SunIcon, themeLabel, useTheme } from './ThemeButton';
 import { toggleTheme } from './theme';
+import { useBackCloses } from './backGuard';
 
 const OPEN_SCALE = 1;
 const CLOSED_SCALE = 0.86;
@@ -83,6 +84,9 @@ export default function GameMenu({ onRestart, onExit, freePlay = false }) {
   const theme = useTheme();
 
   if (open && !mounted) setMounted(true);
+  // The device's back closes the menu or the give-up question, and the game stays.
+  useBackCloses(open, () => closeMenu(true));
+  useBackCloses(giveUpOpen, () => cancelGiveUp());
 
   function closeMenu(restoreFocus) {
     setOpen(false);
