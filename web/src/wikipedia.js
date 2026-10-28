@@ -221,7 +221,7 @@ export function prepareArticleHtml(html) {
 
 const MAIN_PAGE_TITLES = new Set(['עמוד ראשי', 'main page']);
 
-function isMainPageTitle(title) {
+export function isMainPageTitle(title) {
   return MAIN_PAGE_TITLES.has(normalizeTitle(title).toLowerCase());
 }
 

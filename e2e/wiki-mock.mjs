@@ -15,7 +15,16 @@ export const GRAPH = {
   'חתול': ['כלב'],
   'כלב': ['חתול'],
   'ערך תקוע': ['ישראל'],
+  // A page with no links out, for the "choose your own" checks.
+  'ערך בודד': [],
 };
+
+// Redirects (the "choose your own" picker follows them) and a disambiguation page.
+export const REDIRECTS = { 'חתולים': 'חתול', 'תל אביב': 'תל אביב-יפו' };
+export const DISAMBIGUATION = 'מרקורי';
+// The easy free game's pool, served instead of the real web/public/easy-pool.json.
+export const EASY_POOL = ['חיפה', 'יפו'];
+const DESCRIPTIONS = { 'חתול': 'חיית מחמד', 'כלב': 'חיית מחמד', 'ירושלים': 'עיר', 'חיפה': 'עיר' };
 
 export const DAILY = { start: 'ירושלים', goal: 'תל אביב-יפו' };
 export const FREE_POOL = ['חתול', 'כלב'];
@@ -45,8 +54,46 @@ function pagesFor(titles, extra) {
   return titles.map((title) => (GRAPH[title] ? { ns: 0, title, ...extra(title) } : { ns: 0, title, missing: true }));
 }
 
+// Article suggestions while typing: titles that start with (or, for search, contain) the text.
+function answerSuggest(params) {
+  const prefix = params.get('generator') === 'prefixsearch';
+  const term = (prefix ? params.get('gpssearch') : params.get('gsrsearch')) || '';
+  const names = [...Object.keys(GRAPH), DISAMBIGUATION];
+  const found = names.filter((title) => (prefix ? title.startsWith(term) : title.includes(term)));
+  if (!found.length) return { batchcomplete: true };
+  return {
+    query: {
+      pages: found.map((title, index) => ({
+        ns: 0,
+        title,
+        index: index + 1,
+        ...(DESCRIPTIONS[title] ? { description: DESCRIPTIONS[title] } : {}),
+        ...(title === DISAMBIGUATION ? { pageprops: { disambiguation: '' } } : {}),
+      })),
+    },
+  };
+}
+
+// Looking up typed titles: redirects are followed when asked, and the disambiguation page is marked.
+function answerTitles(titles, params) {
+  const redirects = [];
+  const resolved = titles.map((title) => {
+    if (params.get('redirects') && REDIRECTS[title]) {
+      redirects.push({ from: title, to: REDIRECTS[title] });
+      return REDIRECTS[title];
+    }
+    return title;
+  });
+  const pages = resolved.map((title) => {
+    if (title === DISAMBIGUATION) return { ns: 0, title, pageprops: { disambiguation: '' } };
+    return GRAPH[title] ? { ns: 0, title } : { ns: 0, title, missing: true };
+  });
+  return { query: { ...(redirects.length ? { redirects } : {}), pages } };
+}
+
 // The fastest-route search (wikiBot.js) asks for links, links-here and redirects in batches.
 function answerQuery(params) {
+  if (params.get('generator')) return answerSuggest(params);
   const titles = (params.get('titles') || '').split('|').filter(Boolean);
   const prop = params.get('prop') || '';
   if (prop === 'links') {
@@ -62,6 +109,7 @@ function answerQuery(params) {
     };
   }
   if (prop === 'redirects') return { query: { pages: pagesFor(titles, () => ({})) } };
+  if (prop === 'pageprops') return answerTitles(titles, params);
   return { query: { pages: pagesFor(titles, () => ({})) } };
 }
 
@@ -93,6 +141,9 @@ export async function mockWikipedia(page, state = { overrides: {}, log: [] }) {
   await page.route(/^https:\/\/wikimedia\.org\/api\/rest_v1\/metrics\/pageviews\//, (route) => (state.pageviews === 'fail' ? json(route, {}, 503) : json(route, {
     items: [{ articles: [{ article: 'עמוד_ראשי', rank: 1 }, ...FREE_POOL.map((article, i) => ({ article, rank: i + 2 }))] }],
   })));
+  await page.route(/\/easy-pool\.json(\?.*)?$/, (route) => (state.easyPool === 'fail'
+    ? route.fulfill({ status: 503, body: '' })
+    : json(route, { count: EASY_POOL.length, kinds: { place: EASY_POOL } })));
   await page.route(/^https:\/\/(upload\.wikimedia\.org|fonts\.gstatic\.com)\//, (route) => route.fulfill({ status: 204, body: '' }));
   await page.route(/^https:\/\/fonts\.googleapis\.com\//, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await page.route(/\/\.netlify\/functions\//, (route) => json(route, { ok: true }));

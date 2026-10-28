@@ -42,7 +42,8 @@ function scoreLine(row) {
 export function buildShareText(row, siteUrl = SITE_URL) {
   const lines = [];
   if (row?.mode === 'free') {
-    lines.push('משחק חופשי ב־WikiWiki');
+    // A pair the player chose says so, since the player may have picked an easy one.
+    lines.push(row.freeKind === 'custom' ? 'משחק חופשי ב־WikiWiki · זוג שבחרתי' : 'משחק חופשי ב־WikiWiki');
     if (row.startTitle && row.goalTitle) lines.push(`${row.startTitle} ← ${row.goalTitle}`);
   } else {
     const date = shownDate(row);
@@ -80,10 +81,17 @@ async function copyText(text) {
   return copied;
 }
 
+// The invitation the home screen's share button sends.
+export function buildAppShareText(siteUrl = SITE_URL) {
+  return [
+    'בואו לשחק ב־WikiWiki: מגיעים מערך לערך בוויקיפדיה רק דרך הקישורים. כל יום זוג חדש.',
+    siteUrl,
+  ].join('\n');
+}
+
 // Opens the system share sheet when there is one, otherwise copies the text.
 // Returns 'shared', 'copied', 'cancelled' or 'failed'.
-export async function shareResult(row) {
-  const text = buildShareText(row);
+export async function shareText(text) {
   if (typeof navigator.share === 'function') {
     try {
       await navigator.share({ text });
@@ -93,4 +101,12 @@ export async function shareResult(row) {
     }
   }
   return (await copyText(text)) ? 'copied' : 'failed';
+}
+
+export function shareResult(row) {
+  return shareText(buildShareText(row));
+}
+
+export function shareApp() {
+  return shareText(buildAppShareText());
 }

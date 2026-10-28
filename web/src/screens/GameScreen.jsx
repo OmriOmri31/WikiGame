@@ -18,6 +18,11 @@ import Sheet from '../Sheet';
 import { fastestPathNow, publishFastestPath, stopFastestSearches } from '../fastestSearch';
 import { formatDuration } from '../time';
 import { liveDailyPair } from '../dailyPair';
+import { pickEasyPair } from '../easyPool';
+import { cleanFreeKind } from '../freeKind';
+import { countNewGame, gamesPlayed, markTutorialSeen, showsTargetHint } from '../gameCount';
+import { TUTORIAL_PAIR, TUTORIAL_STEPS, TUTORIAL_WAY, nextTutorialStep, tutorialArticle } from '../tutorial';
+import TutorialCoach from '../TutorialCoach';
 import {
   fetchArticle,
   israelDateKey,
@@ -51,13 +56,32 @@ function scrollToHash(hash) {
   return false;
 }
 
+// Firestore rules that don't know the free game's kind yet turn down a score that has it (the
+// rules deploy from main, the app from test first). Such a score is saved without the kind.
+function deniedForKind(error, data) {
+  return Boolean(data?.freeKind) && (error?.code === 'permission-denied' || /permission/i.test(error?.message || ''));
+}
+
 function loadErrorMessage(mode, pair) {
   if (pair?.startTitle) return 'לא ניתן לטעון את הערכים האלה.';
   if (mode === 'free') return 'לא ניתן לטעון משחק חופשי.';
   return 'לא ניתן לטעון את המאמרים היומיים.';
 }
 
-export default function GameScreen({ user, mode = 'daily', pair = null, resume = null, onFinish, onExit }) {
+export default function GameScreen({
+  user,
+  mode = 'daily',
+  freeKind = 'random',
+  pair = null,
+  resume = null,
+  onFinish,
+  onExit,
+  onTutorialDone,
+  tutorialDoneLabel = 'סיום',
+}) {
+  const tutorial = mode === 'tutorial';
+  const kind = mode === 'free' ? cleanFreeKind(freeKind) : '';
+  const getArticle = tutorial ? tutorialArticle : fetchArticle;
   const [startTitle, setStartTitle] = useState('');
   const [goalTitle, setGoalTitle] = useState('');
   const [article, setArticle] = useState(null);
@@ -84,6 +108,9 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const [findIndex, setFindIndex] = useState(0);
   const [findCount, setFindCount] = useState(0);
   const [findCapped, setFindCapped] = useState(false);
+  // "קרא את ערך היעד" under the goal, in a player's first three games (and in the tutorial).
+  const [targetHint, setTargetHint] = useState(tutorial);
+  const [tutorialStep, setTutorialStep] = useState(0);
 
   const pagesRef = useRef(1);
   const elapsedBaseRef = useRef(0);
@@ -115,6 +142,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   const pendingScrollRef = useRef(0);
   const resumeRef = useRef(resume);
   const modeRef = useRef(mode);
+  const countedRef = useRef(false);
   onFinishRef.current = onFinish;
   searchOpenRef.current = searchOpen;
   goalOpenRef.current = goalOpen;
@@ -126,12 +154,13 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
   }
 
   function persistSession() {
-    if (finishedRef.current || modeRef.current === 'preview') return;
+    if (finishedRef.current || modeRef.current === 'preview' || modeRef.current === 'tutorial') return;
     if (!startTitleRef.current || !goalTitleRef.current || !currentTitleRef.current) return;
     if (!pathRef.current.length) return;
     saveGameSession({
       mode: modeRef.current === 'free' ? 'free' : 'daily',
       dailyKey: dailyKeyRef.current,
+      ...(modeRef.current === 'free' ? { freeKind: kind } : {}),
       startTitle: startTitleRef.current,
       goalTitle: goalTitleRef.current,
       currentTitle: currentTitleRef.current,
@@ -186,8 +215,8 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     if (!clockSinceRef.current) clockSinceRef.current = Date.now();
     setClockOn(true);
   }
-  const fixedStart = pair?.startTitle || '';
-  const fixedGoal = pair?.goalTitle || '';
+  const fixedStart = tutorial ? TUTORIAL_PAIR.startTitle : (pair?.startTitle || '');
+  const fixedGoal = tutorial ? TUTORIAL_PAIR.goalTitle : (pair?.goalTitle || '');
 
   // A tap on a link dims the page and runs the thin bar at once. If the article takes a moment,
   // a small note says so, so a slow connection never looks like a dead link.
@@ -199,6 +228,26 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     const timer = window.setTimeout(() => setSlowLoad(true), 700);
     return () => window.clearTimeout(timer);
   }, [loading, article?.title]);
+
+  function tutorialEvent(event) {
+    if (!tutorial) return;
+    setTutorialStep((index) => nextTutorialStep(index, event));
+  }
+
+  function exitTutorial() {
+    finishedRef.current = true;
+    markTutorialSeen();
+    stopClock();
+    onTutorialDone?.();
+  }
+
+  function openGoal() {
+    if (searchOpenRef.current) {
+      searchOpenRef.current = false;
+      setSearchOpen(false);
+    }
+    setGoalOpen(true);
+  }
 
   function showToast(message) {
     setToast(message);
@@ -265,6 +314,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     setArticleHtml(entry.html);
     closeSearchOnNewPage();
     persistSession();
+    tutorialEvent('back');
   }
 
   async function goBack() {
@@ -282,7 +332,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     loadingRef.current = true;
     setLoading(true);
     try {
-      const next = await fetchArticle(previousTitle);
+      const next = await getArticle(previousTitle);
       const html = await prepareArticleHtml(next.html);
       if (finishedRef.current || run !== runRef.current) return;
       cacheRef.current.set(next.title, { article: next, html });
@@ -313,7 +363,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         return { start: normalizeTitle(fixedStart), goal: normalizeTitle(fixedGoal), fixed: true };
       }
       if (mode === 'free') {
-        const picked = await pickFreePlayPair();
+        const picked = kind === 'easy' ? await pickEasyPair() : await pickFreePlayPair();
         return { start: picked.start, goal: picked.goal, fixed: false };
       }
       const snapshot = await readDailyDoc();
@@ -357,7 +407,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         request.catch(() => {});
         early.set(key, request);
       };
-      const isPlainDaily = mode !== 'free' && !lockedPairRef.current && !(fixedStart && fixedGoal);
+      const isPlainDaily = mode === 'daily' && !lockedPairRef.current && !(fixedStart && fixedGoal);
       if (isPlainDaily) {
         const seen = seenDailyPair(israelDateKey(new Date()));
         if (seen) {
@@ -367,6 +417,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       }
       if (resumeRef.current?.currentTitle) startEarly(resumeRef.current.currentTitle);
       const loadArticle = async (title) => {
+        if (tutorial) return tutorialArticle(title);
         // The home screen may already have loaded today's articles (dailyStart.js).
         const request = early.get(normalizeTitle(title)) || peekArticle(title);
         if (request) {
@@ -399,7 +450,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         if (cancelled) return;
 
         const snapshot = resumeRef.current;
-        if (mode === 'free' || mode === 'preview') {
+        if (mode === 'free' || mode === 'preview' || tutorial) {
           dailyKeyRef.current = '';
         } else if (chosen.dailyKey !== undefined) {
           dailyKeyRef.current = chosen.dailyKey;
@@ -447,6 +498,11 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         setArticleHtml(playingHtml);
         startClock((snapshot?.elapsedMs || 0) / 1000);
         persistSession();
+        // Each real game counts once (not a restart of the same game, nor a resumed one).
+        if (!tutorial && mode !== 'preview' && !countedRef.current) {
+          countedRef.current = true;
+          setTargetHint(showsTargetHint(snapshot ? gamesPlayed() : countNewGame()));
+        }
       } catch (error) {
         console.error(error);
         if (!cancelled) setFatal(loadErrorMessage(mode, fixedStart ? { startTitle: fixedStart } : null));
@@ -464,7 +520,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     return () => {
       cancelled = true;
     };
-  }, [attempt, mode, fixedStart, fixedGoal]);
+  }, [attempt, mode, kind, fixedStart, fixedGoal]);
 
   useEffect(() => {
     if (!running || !clockOn) return undefined;
@@ -535,6 +591,19 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     return () => clearPageFind();
   }, [searchOpen, findQuery, articleHtml]);
 
+  // The tutorial moves on when the player does what its current step asks.
+  useEffect(() => {
+    if (tutorial && article) tutorialEvent(goalOpen ? 'goal-open' : 'goal-close');
+  }, [goalOpen]);
+
+  useEffect(() => {
+    if (tutorial && searchOpen) tutorialEvent('search-open');
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (tutorial && searchOpen && findCount > 0 && findQuery.includes(TUTORIAL_WAY)) tutorialEvent('found');
+  }, [searchOpen, findCount, findQuery]);
+
   useEffect(() => {
     const onKey = (event) => {
       if (finishedRef.current) return;
@@ -574,7 +643,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
 
   useEffect(() => {
     const onLeave = (event) => {
-      if (finishedRef.current || fatal) return;
+      if (finishedRef.current || fatal || modeRef.current === 'tutorial') return;
       event.preventDefault();
       event.returnValue = '';
     };
@@ -609,10 +678,18 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       path: score.path,
       ...(Array.isArray(score.fastestPath) ? { fastestPath: score.fastestPath } : {}),
       ...(score.gaveUp ? { gaveUp: true } : {}),
+      ...(!daily && score.freeKind ? { freeKind: score.freeKind } : {}),
     };
     if (daily) return saveDailyScore(user.uid, score.dayKey, data);
-    const ref = await addDoc(collection(db, 'scores'), data);
-    return { id: ref.id };
+    try {
+      const ref = await addDoc(collection(db, 'scores'), data);
+      return { id: ref.id };
+    } catch (error) {
+      if (!deniedForKind(error, data)) throw error;
+      const { freeKind: _kind, ...plain } = data;
+      const ref = await addDoc(collection(db, 'scores'), plain);
+      return { id: ref.id };
+    }
   }
 
   async function saveFinishedScore(score) {
@@ -643,6 +720,13 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     const timeTaken = Number(stopClock().toFixed(3));
     setFinalTime(timeTaken);
     setCongratsOpen(true);
+
+    // The tutorial saves nothing: no score, no session, no stats.
+    if (tutorial) {
+      markTutorialSeen();
+      tutorialEvent('win');
+      return;
+    }
 
     if (mode === 'preview') {
       const delay = Math.max(0, 2000 - (Date.now() - shownAt));
@@ -679,6 +763,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         timeTaken,
         mode: scoreMode,
         dayKey: today,
+        ...(scoreMode === 'free' && kind ? { freeKind: kind } : {}),
         startTitle: startTitleRef.current,
         goalTitle: goalTitleRef.current,
         path: pathRef.current.slice(),
@@ -757,6 +842,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         timeTaken,
         mode: 'free',
         gaveUp: true,
+        ...(kind ? { freeKind: kind } : {}),
         startTitle: startTitleRef.current,
         goalTitle: goalTitleRef.current,
         path: pathRef.current.slice(),
@@ -784,7 +870,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
     loadingRef.current = true;
     setLoading(true);
     try {
-      const next = await fetchArticle(title);
+      const next = await getArticle(title);
       const html = await prepareArticleHtml(next.html);
       if (finishedRef.current || run !== runRef.current) return;
 
@@ -798,6 +884,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
       setArticle(next);
       setArticleHtml(html);
       closeSearchOnNewPage();
+      tutorialEvent(`page:${next.title}`);
 
       if (sameTitle(next.title, goalTitleRef.current)) {
         await completeGame(count);
@@ -870,7 +957,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
 
   return (
     <main className="game">
-      {congratsOpen ? null : (
+      {congratsOpen || tutorial ? null : (
         <GameMenu onRestart={restartGame} onExit={giveUp} freePlay={mode === 'free'} />
       )}
       {congratsOpen ? null : (
@@ -887,19 +974,14 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         <header className="game-header" ref={headerRef}>
           <p className="route-title">{startTitle}</p>
           <p className="arrow" aria-hidden="true">↓</p>
-          <button
-            className="target-link"
-            type="button"
-            onClick={() => {
-              if (searchOpenRef.current) {
-                searchOpenRef.current = false;
-                setSearchOpen(false);
-              }
-              setGoalOpen(true);
-            }}
-          >
+          <button className="target-link" type="button" onClick={openGoal}>
             {goalTitle}
           </button>
+          {targetHint ? (
+            <button className="goal-hint" type="button" onClick={openGoal}>
+              קרא את ערך היעד
+            </button>
+          ) : null}
           {stats}
           {searchOpen ? (
             <FindBar
@@ -958,7 +1040,7 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
         </Sheet>
       ) : null}
 
-      {SecretCode && !congratsOpen ? (
+      {SecretCode && !congratsOpen && !tutorial ? (
         <Suspense fallback={null}>
           <SecretCode
             targetRef={headerRef}
@@ -972,10 +1054,22 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
 
       {congratsOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label="סיום המשחק">
+          <div className="modal-card congrats" role="dialog" aria-modal="true" aria-label={tutorial ? 'סיום ההדרכה' : 'סיום המשחק'}>
             <h2>כל הכבוד!</h2>
-            <p>סיימתם ב־<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
-            <p>מספר הדפים: <bdi>{pages}</bdi></p>
+            {tutorial ? (
+              <>
+                <p>הגעתם ליעד ב־<bdi>{pages}</bdi> דפים. עכשיו אתם יודעים לשחק.</p>
+                <button className="primary" type="button" onClick={exitTutorial}>
+                  {tutorialDoneLabel}
+                </button>
+              </>
+            ) : null}
+            {tutorial ? null : (
+              <>
+                <p>סיימתם ב־<bdi className="clock" dir="ltr">{formatDuration(finalTime ?? 0, { milliseconds: false })}</bdi>.</p>
+                <p>מספר הדפים: <bdi>{pages}</bdi></p>
+              </>
+            )}
             {dailyNote === 'kept' ? <p className="congrats-note">התוצאה הקודמת שלך היום טובה יותר, והיא נשארת בטבלה.</p> : null}
             {dailyNote === 'improved' ? <p className="congrats-note">שיפרת את התוצאה שלך להיום.</p> : null}
             {saveError ? (
@@ -997,6 +1091,16 @@ export default function GameScreen({ user, mode = 'daily', pair = null, resume =
             ) : null}
           </div>
         </div>
+      ) : null}
+
+      {tutorial ? (
+        <TutorialCoach
+          step={TUTORIAL_STEPS[tutorialStep]}
+          stepNumber={tutorialStep + 1}
+          stepCount={TUTORIAL_STEPS.length}
+          onNext={() => tutorialEvent('next')}
+          onExit={exitTutorial}
+        />
       ) : null}
     </main>
   );
