@@ -3,9 +3,9 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 const CustomPairForm = lazy(() => import('./CustomPairForm'));
 
 const KINDS = [
-  { kind: 'random', title: 'אקראי', line: 'שני ערכים אקראיים מוויקיפדיה. לפעמים מפתיע, לפעמים קשה.' },
-  { kind: 'easy', title: 'קל', line: 'ערכים מוכרים: מדינות, ערים, סרטים, מפורסמים ועוד.' },
-  { kind: 'custom', title: 'בחירה שלי', line: 'בוחרים בעצמכם מאיפה מתחילים ולאן מגיעים.' },
+  { kind: 'random', title: 'אקראי', line: 'שני ערכים אקראיים, לפעמים מאתגרים.' },
+  { kind: 'easy', title: 'קל', line: 'שני ערכים מוכרים ופופולריים.' },
+  { kind: 'custom', title: 'בחירה שלי', line: 'שני ערכים שאתם בוחרים בעצמכם.' },
 ];
 
 // "משחק חופשי": the player picks what kind of free game to play.

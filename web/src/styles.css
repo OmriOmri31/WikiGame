@@ -3946,3 +3946,44 @@ input.has-hint { margin-bottom: 6px; }
   align-items: center;
   gap: 6px;
 }
+
+/* Home: the theme, share and help buttons in one row in the corner. Left to right on purpose, so
+   the theme button keeps its place in the corner. */
+.corner-actions {
+  position: fixed;
+  z-index: 8;
+  top: max(18px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  direction: ltr;
+}
+
+.corner-share { position: relative; display: block; }
+
+.corner-note {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--stage-panel-solid, var(--surface-solid));
+  color: var(--stage-ink, var(--label));
+  box-shadow: inset 0 0 0 1px var(--stage-line, var(--separator)), 0 6px 18px rgba(2, 6, 23, 0.12);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  direction: rtl;
+  pointer-events: none;
+}
+
+/* Stays in the page while empty, so screen readers hear the note when it appears. */
+.corner-note:empty { padding: 0; opacity: 0; box-shadow: none; }
+
+.help-button span {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+}

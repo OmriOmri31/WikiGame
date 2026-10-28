@@ -65,7 +65,23 @@ async function loadPersonalScores(uid) {
   return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
 }
 
-// Invites a friend: the share sheet where there is one, otherwise the link is copied.
+function ShareIcon() {
+  return (
+    <svg className="sun-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 14.5V3.5M8.2 7.2 12 3.4l3.8 3.8M8.5 10.5H7a1.6 1.6 0 0 0-1.6 1.6v7.3A1.6 1.6 0 0 0 7 21h10a1.6 1.6 0 0 0 1.6-1.6v-7.3a1.6 1.6 0 0 0-1.6-1.6h-1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Invites a friend: the share sheet where there is one, otherwise the link is copied and a short
+// note shows under the button.
 function ShareAppButton() {
   const [note, setNote] = useState('');
   const timerRef = useRef(0);
@@ -80,8 +96,20 @@ function ShareAppButton() {
   }
 
   return (
-    <button className="text-button home-board-link home-share" type="button" onClick={share}>
-      <span aria-live="polite">{note || 'שתפו את WikiWiki'}</span>
+    <span className="corner-share">
+      <button className="sun-button" type="button" aria-label="שתפו את WikiWiki" title="שתפו את WikiWiki" onClick={share}>
+        <ShareIcon />
+      </button>
+      <span className="corner-note" role="status" aria-live="polite">{note}</span>
+    </span>
+  );
+}
+
+// Opens the short explanation of the game (the same alert that greets the player once a day).
+function HelpButton({ onClick }) {
+  return (
+    <button className="sun-button help-button" type="button" aria-label="הסבר על המשחק" title="הסבר על המשחק" onClick={onClick}>
+      <span aria-hidden="true">?</span>
     </button>
   );
 }
@@ -401,7 +429,15 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
   const logoSrc = theme === 'dark' ? '/wikiwiki-logo-dark.webp' : '/wikiwiki-logo.webp';
 
   return (
-    <Stage className="stage-home">
+    <Stage
+      className="stage-home"
+      corner={(
+        <>
+          <ShareAppButton />
+          <HelpButton onClick={() => setShowIntro(true)} />
+        </>
+      )}
+    >
       <button className="how-to-play" type="button" onClick={onTutorial}>
         איך משחקים?
       </button>
@@ -426,7 +462,6 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
           <button className="text-button home-board-link" type="button" onClick={onLeaderboard}>
             תוצאות
           </button>
-          <ShareAppButton />
           {onDesk ? (
             <button className="text-button home-board-link" type="button" onClick={onDesk}>
               ניהול המשחק
