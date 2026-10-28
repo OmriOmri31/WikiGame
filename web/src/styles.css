@@ -773,15 +773,8 @@ a:focus-visible {
 
 .article-inner.is-loading { opacity: 0.55; }
 
-@font-face {
-  font-family: WikiZW;
-  src: url('./assets/find-guard.ttf') format('truetype');
-  unicode-range: U+E000;
-  font-display: block;
-}
-
 .article-inner {
-  font-family: WikiZW, var(--font);
+  font-family: var(--font);
   width: 100%;
   max-width: 900px;
   min-width: 0;
@@ -824,14 +817,16 @@ a:focus-visible {
   color: #1c1c1e;
 }
 
-mark.page-find {
-  background-color: #ffe14a;
-  color: #1c1c1e;
-  border-radius: 2px;
-}
+/* Browsers without CSS highlights (older iPhones): one box drawn over the current match,
+   outside the article, so the article text itself is never changed. */
+.article-scroll { position: relative; }
 
-mark.page-find.is-current {
-  background-color: #ff9f0a;
+.find-spot {
+  position: absolute;
+  z-index: 1;
+  border-radius: 2px;
+  background-color: rgba(255, 159, 10, 0.45);
+  pointer-events: none;
 }
 
 .article-body img,
@@ -3712,14 +3707,6 @@ html[data-theme="dark"] .tutorial-figure img {
   color: var(--muted);
   font-size: 0.8125rem;
   line-height: 1.5;
-}
-
-.article-inner .wiki-attribution {
-  margin: 32px 0 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--separator);
-  font-family: var(--font);
-  text-align: start;
 }
 
 .board-credit {

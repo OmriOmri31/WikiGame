@@ -21,8 +21,9 @@ import { enterFullscreen } from '../fullscreen';
 import { auth, db } from '../firebase';
 import { loadLocalScores } from '../localScores';
 import { rowDayKey } from '../dailyScore';
-import { israelDateKey } from '../wikipedia';
-import { prefetchDailyDoc } from '../dailyDoc';
+import { israelDateKey, resolveStartTitle } from '../wikipedia';
+import { prefetchDailyDoc, readDailyDoc } from '../dailyDoc';
+import { prefetchDailyStart } from '../dailyStart';
 import Stage from '../Stage';
 import IntroAlert, { claimIntroThisSession, introSeen, markIntroSeen } from './IntroAlert';
 import Tutorial from './Tutorial';
@@ -90,9 +91,20 @@ export default function HomeScreen({ user, redirectError, onStart, onFreePlay, o
     setTutorialOpen(false);
   }, []);
 
-  // Start reading today's daily document now, so the daily game opens without waiting for it.
+  // Start reading today's daily document and loading today's two articles now, in the
+  // background, so the daily game opens without waiting. Nothing is shown and no clock starts.
+  // It runs again when the tab comes back, in case the page sat open for a long time.
   useEffect(() => {
-    prefetchDailyDoc();
+    const warm = () => {
+      prefetchDailyDoc();
+      prefetchDailyStart({ readDoc: readDailyDoc, resolveStart: resolveStartTitle }).catch(() => {});
+    };
+    warm();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') warm();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   useEffect(() => {
