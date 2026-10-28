@@ -126,6 +126,8 @@ test.describe('free game kinds', () => {
 
     await startBox.fill('ערך בודד');
     await goalBox.fill('כלב');
+    // The only suggestion is what was typed, so the list closes and leaves the button free.
+    await expect(goalBox).toHaveAttribute('aria-expanded', 'false');
     await play.click();
     await expect(dialog.getByRole('alert')).toContainText('אין קישורים');
 

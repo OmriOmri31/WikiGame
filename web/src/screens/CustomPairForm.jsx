@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { checkCustomPair } from '../customPair';
 import { suggestArticles } from '../wikiBot';
-import { normalizeTitle } from '../wikipedia';
+import { normalizeTitle, sameTitle } from '../wikipedia';
 
 // One article box with suggestions from Hebrew Wikipedia as the player types.
 function ArticleField({ id, label, value, onChange, error, disabled }) {
@@ -34,6 +34,8 @@ function ArticleField({ id, label, value, onChange, error, disabled }) {
         if (run !== generation.current) return;
         setItems(found);
         setActive(0);
+        // Nothing to choose when the only suggestion is what was typed: keep the button free.
+        if (found.length === 1 && sameTitle(found[0].title, query)) setOpen(false);
       } catch (searchError) {
         console.error(searchError);
         if (run !== generation.current) return;
