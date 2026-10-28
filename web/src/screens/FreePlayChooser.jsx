@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { useBackCloses } from '../backGuard';
 
 const CustomPairForm = lazy(() => import('./CustomPairForm'));
 
@@ -11,6 +12,8 @@ const KINDS = [
 // "משחק חופשי": the player picks what kind of free game to play.
 export default function FreePlayChooser({ onPlay, onClose }) {
   const [custom, setCustom] = useState(false);
+  // The device's back steps out of "בחירה שלי", then closes the chooser.
+  useBackCloses(true, () => (custom ? setCustom(false) : onClose()));
 
   useEffect(() => {
     const onKey = (event) => {
