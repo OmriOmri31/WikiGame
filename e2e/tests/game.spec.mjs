@@ -156,13 +156,13 @@ test.describe('daily game (guest, no sign-in)', () => {
     await expect(page.locator('html')).not.toHaveAttribute('data-theme', before);
 
     await openMenu(page);
-    await page.getByRole('menuitem', { name: /ויתור/ }).click();
-    const confirm = page.getByRole('alertdialog', { name: 'לוותר על המשחק?' });
+    await page.getByRole('menuitem', { name: 'חזרה לדף הבית' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'לחזור לדף הבית?' });
     await confirm.getByRole('button', { name: 'המשך לשחק' }).click();
     await expect(confirm).toHaveCount(0);
     await openMenu(page);
-    await page.getByRole('menuitem', { name: /ויתור/ }).click();
-    await page.getByRole('alertdialog').getByRole('button', { name: 'ויתור' }).click();
+    await page.getByRole('menuitem', { name: 'חזרה לדף הבית' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'חזרה לדף הבית' }).click();
     await expect(page.getByRole('button', { name: 'משחק יומי' })).toBeVisible();
   });
 
@@ -208,9 +208,9 @@ test.describe('free game', () => {
     await startFree(page);
     await expect(page.locator('.route-title')).toHaveText(/\S/);
     await openMenu(page);
-    await page.getByRole('menuitem', { name: /ויתור/ }).click();
-    await expect(page.getByText(/המשחק נשמר בטבלה/)).toBeVisible();
-    await page.getByRole('alertdialog').getByRole('button', { name: 'ויתור' }).click();
+    await page.getByRole('menuitem', { name: 'חזרה לדף הבית' }).click();
+    await expect(page.getByText(/המשחק יסתיים ויישמר בטבלה/)).toBeVisible();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'חזרה לדף הבית' }).click();
     const free = await openFreeBoard(page);
     await expect(free.getByRole('button', { name: 'שחק שוב' })).toBeVisible();
     // A game given up has nothing to share.
