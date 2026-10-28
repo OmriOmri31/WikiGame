@@ -26,11 +26,24 @@ export const DISAMBIGUATION = 'מרקורי';
 export const EASY_POOL = ['חיפה', 'יפו'];
 const DESCRIPTIONS = { 'חתול': 'חיית מחמד', 'כלב': 'חיית מחמד', 'ירושלים': 'עיר', 'חיפה': 'עיר' };
 
+// A category page, like the real "קטגוריה:בוגרי ישיבת חברון כנסת ישראל": the parsed page is an empty
+// parser-output div, and its members come only from list=categorymembers. Linked from חיפה (in the
+// page HTML only, so the fastest-route graph above is unchanged).
+export const CATEGORY = 'קטגוריה:ערים';
+export const CATEGORY_MEMBERS = [
+  { ns: 14, title: 'קטגוריה:ערי נמל' },
+  { ns: 0, title: 'ירושלים' },
+  { ns: 0, title: 'ישראל' },
+  { ns: 6, title: 'קובץ:מפה.png' },
+];
+const PAGE_EXTRA_LINKS = { 'חיפה': [CATEGORY] };
+const EMPTY_CATEGORY_HTML = '<div class="mw-content-rtl mw-parser-output" lang="he" dir="rtl">\n<!-- NewPP limit report -->\n</div>';
+
 export const DAILY = { start: 'ירושלים', goal: 'תל אביב-יפו' };
 export const FREE_POOL = ['חתול', 'כלב'];
 
 export function articleHtml(title) {
-  const links = (GRAPH[title] || []).map((name) => `<li>${link(name)}</li>`).join('');
+  const links = [...(GRAPH[title] || []), ...(PAGE_EXTRA_LINKS[title] || [])].map((name) => `<li>${link(name)}</li>`).join('');
   return `<div class="mw-parser-output">
 <p><b>${title}</b> הוא ערך לבדיקות. ראו גם <a href="#קישורים">קישורים</a>,
 <a href="https://example.com/outside" class="external">אתר חיצוני</a> ו
@@ -93,6 +106,10 @@ function answerTitles(titles, params) {
 
 // The fastest-route search (wikiBot.js) asks for links, links-here and redirects in batches.
 function answerQuery(params) {
+  if (params.get('list') === 'categorymembers') {
+    const members = params.get('cmtitle') === CATEGORY ? CATEGORY_MEMBERS : [];
+    return { batchcomplete: '', query: { categorymembers: members } };
+  }
   if (params.get('generator')) return answerSuggest(params);
   const titles = (params.get('titles') || '').split('|').filter(Boolean);
   const prop = params.get('prop') || '';
@@ -126,6 +143,10 @@ export async function mockWikipedia(page, state = { overrides: {}, log: [] }) {
       const mode = overrides[title];
       if (mode === 'stall') return undefined; // never fulfilled: the app's own time limit must kick in
       if (mode === 'fail') return json(route, { error: 'unavailable' }, 503);
+      if (title === CATEGORY && !mode) {
+        if (params.get('formatversion') === '2') return json(route, { parse: { title, text: EMPTY_CATEGORY_HTML } });
+        return json(route, { parse: { title, displaytitle: title, text: { '*': EMPTY_CATEGORY_HTML } } });
+      }
       if (mode === 'missing' || !GRAPH[title]) {
         return json(route, { error: { code: 'missingtitle', info: "The page you specified doesn't exist." } });
       }
