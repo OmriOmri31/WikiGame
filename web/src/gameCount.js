@@ -6,8 +6,12 @@ import { loadLocalScores } from './localScores.js';
 const COUNT_KEY = 'wikigame.gamesPlayed';
 const TUTORIAL_KEY = 'wikigame.tutorialSeen';
 
-// "קרא את ערך היעד" shows in the first three games.
+// "קרא את ערך היעד" shows in the first three games counted by HINT_KEY. That counter started
+// fresh with the release that brought the hint (v2), so players who were already playing get it in
+// their next three games too. It is kept on this device only: a signed-in player on a new phone
+// simply sees the small link for three more games there, which does no harm.
 export const HINT_GAMES = 3;
+const HINT_KEY = 'wikigame.hintGames.v2';
 
 function read(key) {
   try {
@@ -40,10 +44,22 @@ export function noteKnownGames(count) {
   if (value > storedCount()) write(COUNT_KEY, String(value));
 }
 
-// A new game started. Returns its number (1 for the first game).
+function hintCount() {
+  const value = Number.parseInt(read(HINT_KEY), 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// The number of the game in progress, as the hint counts it (for a game opened again after a reload).
+export function currentHintGame() {
+  return hintCount();
+}
+
+// A new game started (daily or free; never the tutorial). Returns its number as the hint counts
+// it: 1 for the first game since the hint arrived.
 export function countNewGame() {
-  const next = gamesPlayed() + 1;
-  write(COUNT_KEY, String(next));
+  write(COUNT_KEY, String(gamesPlayed() + 1));
+  const next = hintCount() + 1;
+  write(HINT_KEY, String(next));
   return next;
 }
 

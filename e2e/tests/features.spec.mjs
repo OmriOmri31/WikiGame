@@ -1,5 +1,5 @@
 import {
-  test, expect, openHome, articleLink, waitForArticle, titled, startFree,
+  test, expect, openHome, articleLink, waitForArticle, titled, startFree, openMenu,
 } from '../fixtures.mjs';
 import { DAILY, EASY_POOL } from '../wiki-mock.mjs';
 
@@ -17,11 +17,20 @@ test.describe('share the app', () => {
     });
     await openHome(page);
     await page.getByRole('button', { name: 'שתפו את WikiWiki' }).click();
-    await expect(page.getByRole('button', { name: 'הקישור הועתק' })).toBeVisible();
+    const note = page.locator('.corner-actions').getByRole('status');
+    await expect(note).toHaveText('הקישור הועתק');
     const copied = await page.evaluate(() => window.__copied);
     expect(copied).toMatch(/^בואו לשחק ב־WikiWiki/);
     expect(copied).toContain('https://wikiwiki-game.netlify.app');
-    await expect(page.getByRole('button', { name: 'שתפו את WikiWiki' })).toBeVisible({ timeout: 5000 });
+    await expect(note).toHaveText('', { timeout: 5000 });
+  });
+
+  test('is an icon in the top corner, not a text button under the results', async ({ page }) => {
+    await openHome(page);
+    const corner = page.locator('.corner-actions');
+    await expect(corner.getByRole('button', { name: 'שתפו את WikiWiki' })).toBeVisible();
+    await expect(corner.getByRole('button', { name: 'שתפו את WikiWiki' })).toHaveAttribute('title', 'שתפו את WikiWiki');
+    await expect(page.getByText('שתפו את WikiWiki')).toHaveCount(0);
   });
 
   test('opens the share sheet on phones', async ({ page }) => {
@@ -33,7 +42,7 @@ test.describe('share the app', () => {
     await page.getByRole('button', { name: 'שתפו את WikiWiki' }).click();
     await expect.poll(() => page.evaluate(() => window.__shared?.text || '')).toContain('https://wikiwiki-game.netlify.app');
     // No "copied" note after a real share.
-    await expect(page.getByRole('button', { name: 'שתפו את WikiWiki' })).toBeVisible();
+    await expect(page.locator('.corner-actions').getByRole('status')).toHaveText('');
   });
 });
 
@@ -50,11 +59,11 @@ test.describe('"קרא את ערך היעד"', () => {
     await page.reload();
     await waitForArticle(page, DAILY.start);
     await expect(hint).toBeVisible();
-    expect(await page.evaluate(() => localStorage.getItem('wikigame.gamesPlayed'))).toBe('1');
+    expect(await page.evaluate(() => localStorage.getItem('wikigame.hintGames.v2'))).toBe('1');
   });
 
   test('still shows in the third game', async ({ page }) => {
-    await page.addInitScript(() => { localStorage.setItem('wikigame.gamesPlayed', '2'); });
+    await page.addInitScript(() => { localStorage.setItem('wikigame.hintGames.v2', '2'); });
     await openHome(page);
     await startFree(page);
     await expect(page.locator('.route-title')).toHaveText(/\S/);
@@ -62,12 +71,106 @@ test.describe('"קרא את ערך היעד"', () => {
   });
 
   test('is gone from the fourth game on', async ({ page }) => {
-    await page.addInitScript(() => { localStorage.setItem('wikigame.gamesPlayed', '3'); });
+    await page.addInitScript(() => { localStorage.setItem('wikigame.hintGames.v2', '3'); });
     await openHome(page);
     await page.getByRole('button', { name: 'משחק יומי' }).click();
     await waitForArticle(page, DAILY.start);
     await expect(page.getByRole('button', { name: titled(DAILY.goal) })).toBeVisible();
     await expect(page.getByRole('button', { name: 'קרא את ערך היעד' })).toHaveCount(0);
+  });
+});
+
+test.describe('"קרא את ערך היעד" after the update', () => {
+  async function giveUp(page) {
+    await openMenu(page);
+    await page.getByRole('menuitem', { name: /ויתור/ }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'ויתור' }).click();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  }
+  const hint = (page) => page.getByRole('button', { name: 'קרא את ערך היעד' });
+
+  test('a player who played before sees it in the next three games, daily and free mixed, then not', async ({ page }) => {
+    // Played a lot before this release: the old counter and saved results.
+    await page.addInitScript(() => {
+      if (localStorage.getItem('wikigame.setupDone')) return;
+      localStorage.setItem('wikigame.setupDone', '1');
+      localStorage.setItem('wikigame.gamesPlayed', '30');
+      const row = (mode, day) => ({
+        mode, day, pagesVisited: 4, timeTaken: 60, startTitle: 'חתול', goalTitle: 'כלב',
+        path: ['חתול', 'כלב'], createdAt: Date.now() - 86_400_000,
+      });
+      localStorage.setItem('wikigame.localScores', JSON.stringify([row('free'), row('free'), row('daily', '2026-01-01')]));
+    });
+    await openHome(page);
+    // 1: daily.
+    await page.getByRole('button', { name: 'משחק יומי' }).click();
+    await waitForArticle(page, DAILY.start);
+    await expect(page.locator('.coach')).toHaveCount(0);
+    await expect(hint(page)).toBeVisible();
+    await giveUp(page);
+    // 2: free, random.
+    await openHome(page);
+    await startFree(page);
+    await expect(page.locator('.route-title')).toHaveText(/\S/);
+    await expect(hint(page)).toBeVisible();
+    // A reload goes on with the same game: still game 2.
+    await page.reload();
+    await expect(page.locator('.route-title')).toHaveText(/\S/);
+    await expect(hint(page)).toBeVisible();
+    await giveUp(page);
+    // 3: free, easy.
+    await openHome(page);
+    await startFree(page, 'קל');
+    await expect(page.locator('.route-title')).toHaveText(/\S/);
+    await expect(hint(page)).toBeVisible();
+    await giveUp(page);
+    // 4: free again. The hint is gone.
+    await openHome(page);
+    await startFree(page);
+    await expect(page.locator('.route-title')).toHaveText(/\S/);
+    // The count is written when the first article is in, at the same moment the hint is decided.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('wikigame.hintGames.v2'))).toBe('4');
+    await expect(page.getByRole('progressbar', { name: 'טוען ערך' })).toHaveCount(0);
+    await expect(hint(page)).toHaveCount(0);
+  });
+});
+
+test.describe('help button', () => {
+  test('"?" opens the explanation of the game, and it closes again', async ({ page }) => {
+    await openHome(page);
+    const help = page.locator('.corner-actions').getByRole('button', { name: 'הסבר על המשחק' });
+    await expect(help).toHaveAttribute('title', 'הסבר על המשחק');
+    await help.click();
+    const intro = page.getByRole('alertdialog', { name: 'איך מגיעים מכדורגל לפיל?' });
+    await expect(intro).toBeVisible();
+    await expect(intro).toContainText('רק בלחיצה על קישורים');
+    await intro.getByRole('button', { name: 'הבנתי' }).click();
+    await expect(intro).toHaveCount(0);
+    await help.click();
+    await expect(intro).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(intro).toHaveCount(0);
+  });
+
+  test('the three corner icons sit in one row, the same size, clear of "איך משחקים?", on a narrow phone', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await openHome(page);
+    const corner = page.locator('.corner-actions');
+    const names = ['מצב (כהה|בהיר)', 'שתפו את WikiWiki', 'הסבר על המשחק'];
+    const boxes = [];
+    for (const name of names) boxes.push(await corner.getByRole('button', { name: new RegExp(`^${name}$`) }).boundingBox());
+    for (const box of boxes) {
+      expect(Math.round(box.width)).toBe(44);
+      expect(Math.round(box.height)).toBe(44);
+      expect(Math.abs(box.y - boxes[0].y)).toBeLessThanOrEqual(1);
+    }
+    // Theme in the corner, then share, then help.
+    expect(boxes[0].x).toBeLessThan(boxes[1].x);
+    expect(boxes[1].x).toBeLessThan(boxes[2].x);
+    const how = await page.getByRole('button', { name: 'איך משחקים?' }).boundingBox();
+    expect(boxes[2].x + boxes[2].width).toBeLessThan(how.x);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });
 

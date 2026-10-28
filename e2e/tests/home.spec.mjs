@@ -6,7 +6,7 @@ test.describe('home screen', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'he');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page).toHaveTitle('משחק הוויקיפדיה');
-    for (const name of ['משחק יומי', 'משחק חופשי', 'תוצאות', 'שתפו את WikiWiki', 'איך משחקים?',
+    for (const name of ['משחק יומי', 'משחק חופשי', 'תוצאות', 'שתפו את WikiWiki', 'הסבר על המשחק', 'איך משחקים?',
       'התחברות או הרשמה עם Google', 'התחברות או הרשמה עם אימייל']) {
       await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
     }

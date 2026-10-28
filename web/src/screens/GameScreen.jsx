@@ -20,7 +20,7 @@ import { formatDuration } from '../time';
 import { liveDailyPair } from '../dailyPair';
 import { pickEasyPair } from '../easyPool';
 import { cleanFreeKind } from '../freeKind';
-import { countNewGame, gamesPlayed, markTutorialSeen, showsTargetHint } from '../gameCount';
+import { countNewGame, currentHintGame, markTutorialSeen, showsTargetHint } from '../gameCount';
 import { TUTORIAL_PAIR, TUTORIAL_STEPS, TUTORIAL_WAY, nextTutorialStep, tutorialArticle } from '../tutorial';
 import TutorialCoach from '../TutorialCoach';
 import {
@@ -501,7 +501,7 @@ export default function GameScreen({
         // Each real game counts once (not a restart of the same game, nor a resumed one).
         if (!tutorial && mode !== 'preview' && !countedRef.current) {
           countedRef.current = true;
-          setTargetHint(showsTargetHint(snapshot ? gamesPlayed() : countNewGame()));
+          setTargetHint(showsTargetHint(snapshot ? currentHintGame() : countNewGame()));
         }
       } catch (error) {
         console.error(error);
