@@ -2,6 +2,7 @@ import {
   test, expect, openHome, articleLink, waitForArticle, titled, startFree, openMenu,
 } from '../fixtures.mjs';
 import { DAILY, EASY_POOL } from '../wiki-mock.mjs';
+import { PLAYER } from '../emulator.mjs';
 
 const coachLine = (page) => page.locator('.coach .coach-text');
 
@@ -171,6 +172,42 @@ test.describe('help button', () => {
     expect(boxes[2].x + boxes[2].width).toBeLessThan(how.x);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe('help button, signed in', () => {
+  test.use({ skipIntro: false });
+  test('a signed-in player gets "don\'t show again" only on the automatic intro, not from "?"', async ({ page }) => {
+    const intro = page.getByRole('alertdialog', { name: 'איך מגיעים מכדורגל לפיל?' });
+    await page.goto('/');
+    await expect(intro).toBeVisible();
+    await intro.getByRole('button', { name: 'הבנתי' }).click();
+    await expect(intro).toHaveCount(0);
+    await page.getByRole('button', { name: 'התחברות או הרשמה עם אימייל' }).click();
+    await page.getByLabel('אימייל').fill(PLAYER.email);
+    await page.getByLabel('סיסמה').fill(PLAYER.password);
+    await page.locator('form').getByRole('button', { name: 'התחברות' }).click();
+    await expect(page.getByRole('heading', { name: `שלום, ${PLAYER.nickname}` })).toBeVisible({ timeout: 15_000 });
+
+    // A new day for the intro: it opens by itself, with the box.
+    await page.evaluate(() => {
+      localStorage.removeItem('wikigame.introDay');
+      sessionStorage.removeItem('wikigame.introSession');
+    });
+    await page.reload();
+    await expect(intro).toBeVisible();
+    await expect(page.getByRole('heading', { name: `שלום, ${PLAYER.nickname}` })).toBeAttached({ timeout: 15_000 });
+    await expect(intro.getByRole('checkbox', { name: 'אל תציג שוב' })).toBeVisible();
+    await intro.getByRole('button', { name: 'הבנתי' }).click();
+    await expect(intro).toHaveCount(0);
+
+    // Opened on purpose from "?": no box.
+    await page.locator('.corner-actions').getByRole('button', { name: 'הסבר על המשחק' }).click();
+    await expect(intro).toBeVisible();
+    await expect(intro.getByRole('checkbox')).toHaveCount(0);
+    await expect(intro.getByText('אל תציג שוב')).toHaveCount(0);
+    await intro.getByRole('button', { name: 'הבנתי' }).click();
+    await expect(intro).toHaveCount(0);
   });
 });
 
